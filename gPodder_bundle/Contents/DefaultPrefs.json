@@ -1,0 +1,28 @@
+[
+    {
+        "id":       "server",
+        "label":    "mygpo webservice",
+        "type":     "text",
+        "default":  "gpodder.net"
+    },
+    {
+        "id":       "device_id",
+        "label":    "mygpo device id",
+        "type":     "text",
+        "default":  "gPodder on Plex"
+    },
+    {
+        "id":       "username",
+        "label":    "Username",
+        "type":     "text",
+        "default":  ""
+    },
+    {
+        "id":       "password",
+        "label":    "Password",
+        "type":     "text",
+        "option":   "hidden",
+        "default":  "",
+        "secure":   "true"
+    }
+]
