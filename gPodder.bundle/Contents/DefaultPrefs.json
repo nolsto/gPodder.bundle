@@ -1,13 +1,13 @@
 [
     {
         "id":       "server",
-        "label":    "mygpo webservice",
+        "label":    "Webservice",
         "type":     "text",
         "default":  "gpodder.net"
     },
     {
-        "id":       "device_id",
-        "label":    "mygpo device id",
+        "id":       "device_name",
+        "label":    "Device Name",
         "type":     "text",
         "default":  "gPodder on Plex"
     },

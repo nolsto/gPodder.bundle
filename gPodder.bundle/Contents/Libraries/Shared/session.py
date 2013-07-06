@@ -6,18 +6,21 @@ class Session(object):
     """docstring for Session
     """
 
-    def __init__(self, *args, **kwargs):
-        self._server = None
-        self._device_id = None
-        self._username = None
-        self._password = None
+    def __init__(self, device_id):
+        self._device_id = device_id
+        self._server = ''
+        self._device_name = ''
+        self._username = ''
+        self._password = ''
         self._public_client = None
         self._client = None
-        self.set_prefs(*args, **kwargs)
+        self._public_client_is_dirty = True
+        self._client_is_dirty = True
+        self._device_name_is_dirty = True
 
     def server():
         def fset(self, value):
-            if value is self._server:
+            if self._server == value:
                 return
             self._server = value
             self._public_client_is_dirty = True
@@ -25,9 +28,18 @@ class Session(object):
         return locals()
     server = property(**server())
 
+    def device_name():
+        def fset(self, value):
+            if self._device_name == value:
+                return
+            self._device_name = value
+            self._device_name_is_dirty = True
+        return locals()
+    device_name = property(**device_name())
+
     def username():
         def fset(self, value):
-            if value is self._username:
+            if self._username == value:
                 return
             self._username = value
             self._client_is_dirty = True
@@ -36,7 +48,7 @@ class Session(object):
 
     def password():
         def fset(self, value):
-            if value is self._password:
+            if self._password == value:
                 return
             self._password = value
             self._client_is_dirty = True
@@ -51,19 +63,23 @@ class Session(object):
     def client(self):
         return self._client
 
-    def set_prefs(self, server, device_id, username, password):
+    @property
+    def public_client_is_dirty(self):
+        return self._public_client_is_dirty
+
+    @property
+    def client_is_dirty(self):
+        return self._client_is_dirty
+
+    @property
+    def device_name_is_dirty(self):
+        return self._device_name_is_dirty
+
+    def set_prefs(self, server, device_name, username, password):
         self.server = server
-        self._device_id = device_id
+        self.device_name = device_name
         self.username = username
         self.password = password
-
-        if self._public_client_is_dirty:
-            self.set_public_client()
-            self._public_client_is_dirty = False
-
-        if self._client_is_dirty:
-            self.set_client()
-            self._client_is_dirty = False
 
     def set_public_client(self):
         public_client = api.public.PublicClient(self._server)
@@ -73,6 +89,8 @@ class Session(object):
             self._public_client = None
         else:
             self._public_client = public_client
+        self._public_client_is_dirty = False
+        return self._public_client
 
     def set_client(self):
         client = api.MygPodderClient(self._username, self._password, self._server)
@@ -82,3 +100,16 @@ class Session(object):
             self._client = None
         else:
             self._client = client
+        self._client_is_dirty = False
+        return self._client
+
+    def update_device(self):
+        try:
+            self._client.update_device_settings(self._device_id, type='server',
+                                                caption=self._device_name)
+        except Exception, e:
+            raise
+        else:
+            pass
+        finally:
+            pass

@@ -1,0 +1,15 @@
+{
+  "invalid_public_client": "Please set Webservice in Preferences.",
+  "invalid_client": "Please set username and password in Preferences.",
+
+  "prefs_incomplete": "Please set all fields in Preferences.",
+  "prefs_bad_public_client": "Could not connect to webservice.",
+  "prefs_bad_client": "Could not authenticate username & password.",
+
+  "error_search": "Search Timed out.",
+  "error_toplist": "Unable to get toplist.",
+  "error_subscriptions": "Unable to get subscriptions.",
+
+  "subscribed": "Subscribed to",
+  "unsubscribed": "Unsubscribed from"
+}
