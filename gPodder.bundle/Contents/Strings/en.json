@@ -1,4 +1,13 @@
 {
+  "subscriptions": "My Subscriptions",
+  "recommendations": "My Recommendations",
+  "toplist": "Most Popular",
+  "search": "Search",
+  "preferences": "Preferences",
+
+  "search_prompt": "Search Podcasts",
+  "search_results": "Search Results",
+
   "invalid_public_client": "Please set Webservice in Preferences.",
   "invalid_client": "Please set username and password in Preferences.",
 
@@ -9,6 +18,9 @@
   "error_search": "Search Timed out.",
   "error_toplist": "Unable to get toplist.",
   "error_subscriptions": "Unable to get subscriptions.",
+
+  "alert_no_subscriptions": "You have no subscriptions",
+  "alert_no_recommendations": "You have no recommendations",
 
   "subscribed": "Subscribed to",
   "unsubscribed": "Unsubscribed from"

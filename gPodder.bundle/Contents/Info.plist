@@ -12,5 +12,19 @@
     <string>2</string>
     <key>PlexPluginCodePolicy</key>
     <string>Elevated</string>
+    <key>PlexURLServices</key>
+    <dict>
+        <key>Feedservice</key>
+        <dict>
+            <key>Identifier</key>
+            <string>com.nolsto.plex.plugins.gpodder.feedservice</string>
+            <key>URLPattern</key>
+            <string>http://127\.0\.0\.1:8000/parse</string>
+            <key>TestURLs</key>
+            <array>
+                <string>http://127.0.0.1:8000/parse?url=http%3A%2F%2Ffeeds.feedburner.com%2Flinuxoutlaws</string>
+            </array>
+        </dict>
+    </dict>
 </dict>
 </plist>

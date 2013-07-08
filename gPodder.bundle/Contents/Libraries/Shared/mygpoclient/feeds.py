@@ -100,7 +100,11 @@ class FeedserviceClient(mygpoclient.json.JsonClient):
         """ Extract Last-modified header and passes response body
             to JsonClient for decoding"""
 
-        last_modified = self.parse_header_date(response.headers['last-modified'])
+        try:
+            last_modified = self.parse_header_date(response.headers['last-modified'])
+        except Exception, e:
+            last_modified = None
+
         feeds = super(FeedserviceClient, self)._process_response(response)
         return feeds, last_modified
 

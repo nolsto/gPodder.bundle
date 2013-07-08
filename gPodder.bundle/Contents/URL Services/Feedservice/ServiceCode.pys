@@ -1,0 +1,23 @@
+
+
+def MetadataObjectForURL(url):
+    return TrackObject(
+        title='Foo',
+        artist='Bar',
+    )
+
+
+def MediaObjectsForURL(url):
+    return [MediaObject(
+                audio_channels=2,
+                audio_codec=AudioCodec.MP3, # parse mimetype for this
+                duration=776000,
+                parts=[PartObject(
+                    key='http://skeptoid.com/audio/skeptoid-4369.mp3',
+                    duration=776000,
+                )]
+            )]
+
+
+# def NormalizeURL(url):
+#     pass

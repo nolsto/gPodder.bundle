@@ -1,12 +1,10 @@
 import cerealizer
 from functools import wraps
-from posixpath import basename
 from time import time
 from urllib2 import URLError
-from urlparse import urlparse
+from urllib import urlencode
 
 from mygpoclient import api
-from mygpoclient.http import Unauthorized, NotFound
 
 from session import Session
 
@@ -15,6 +13,7 @@ NAME = 'gPodder'
 ICON = 'icon-default.png'
 DEVICE_ID = 'plex-gpodder-plugin.%s' % Network.Hostname
 CACHE_TIME = 86400 # one day
+FEEDSERVICE = 'http://127.0.0.1:8000/parse'
 
 cerealizer.register(api.simple.Podcast)
 
@@ -34,7 +33,7 @@ def public_client_required(func):
         global session
 
         if not session.public_client:
-            return InvalidPrefs(L('invalid_public_client'))
+            return ErrorInvalidPrefs(L('invalid_public_client'))
         else:
             return func(*args, **kwargs)
     return wrapper
@@ -49,7 +48,7 @@ def client_required(func):
         global session
 
         if not session.client:
-            return InvalidPrefs(L('invalid_client'))
+            return ErrorInvalidPrefs(L('invalid_client'))
         else:
             return func(*args, **kwargs)
     return wrapper
@@ -80,18 +79,19 @@ def remove_client_cache():
     Dict.Save()
 
 
+def Alert(header, message):
+    return ObjectContainer(header=header, message=message,
+                           no_history=True, no_cache=True)
+
 def Error(message):
-    oc = ObjectContainer(no_history=True, header='Error',
-                         message=message)
-    return oc
+    return Alert('Error', message)
 
 
-def InvalidPrefs(message):
+def ErrorInvalidPrefs(message):
     '''mygpo API error with current preferences
     '''
-    oc = ObjectContainer(no_history=True, header='Preferences Error',
-                         message=message)
-    oc.add(PrefsObject(title='Preferences'))
+    oc = Error(message)
+    oc.add(PrefsObject(title=L('preferences')))
     return oc
 
 
@@ -104,19 +104,19 @@ def ValidatePrefs():
     password = Prefs['password']
 
     if not (server and device_name and username and password):
-        return InvalidPrefs(L('prefs_incomplete'))
+        return ErrorInvalidPrefs(L('prefs_incomplete'))
 
     session.set_prefs(server, device_name, username, password)
 
     if session.public_client_is_dirty:
-        if not session.set_public_client():
-            return InvalidPrefs(L('prefs_bad_public_client'))
+        if not session.create_public_client():
+            return ErrorInvalidPrefs(L('prefs_bad_public_client'))
         else:
             remove_public_client_cache()
 
     if session.client_is_dirty:
-        if not session.set_client():
-            return InvalidPrefs(L('prefs_bad_client'))
+        if not session.create_client():
+            return ErrorInvalidPrefs(L('prefs_bad_client'))
         else:
             remove_client_cache()
 
@@ -130,6 +130,11 @@ def Start():
     session = Session(DEVICE_ID)
     session.set_prefs(Prefs['server'], Prefs['device_name'], Prefs['username'],
                       Prefs['password'])
+    session.create_public_client()
+    session.create_client()
+    session.create_feedservice_client()
+    session.update_device()
+
 
 #==============================================================================
 # Containers
@@ -138,12 +143,12 @@ def Start():
 @handler('/music/gpodder', NAME, thumb=ICON)
 def MainMenu():
     oc = ObjectContainer(title1=NAME, no_cache=True)
-    oc.add(DirectoryObject(key=Callback(Subscriptions), title='My Subscriptions'))
-    oc.add(DirectoryObject(key=Callback(Recommendations), title='My Recommendations'))
-    oc.add(DirectoryObject(key=Callback(Toplist), title='Most Popular'))
-    oc.add(InputDirectoryObject(key=Callback(Search), title='Search',
-                                prompt='Search Podcasts'))
-    oc.add(PrefsObject(title='Preferences'))
+    oc.add(DirectoryObject(key=Callback(Subscriptions), title=L('subscriptions')))
+    oc.add(DirectoryObject(key=Callback(Recommendations), title=L('recommendations')))
+    oc.add(DirectoryObject(key=Callback(Toplist), title=L('toplist')))
+    oc.add(InputDirectoryObject(key=Callback(Search), title=L('search'),
+                                prompt=L('search_prompt')))
+    oc.add(PrefsObject(title=L('preferences')))
     return oc
 
 
@@ -158,7 +163,7 @@ def Search(query):
     except URLError, e:
         return Error(L('error_search'))
 
-    oc = ObjectContainer(title1=NAME, title2='Search Results')
+    oc = ObjectContainer(title1=NAME, title2=L('search_results'))
     for entry in search_results:
         oc.add(TVShowObject(
             key=Callback(Podcast, entry=entry),
@@ -207,7 +212,7 @@ def Subscriptions():
         subscriptions += subscriptions_changes.add
         # if subscriptions list has changed at all from the above two
         # operations, write subscriptions to disk
-        if initial_subscriptions != subscriptions:
+        if subscriptions != initial_subscriptions:
             Data.Save('subscriptions', cerealizer.dumps(subscriptions))
     else:
         Log('Using requested subscriptions')
@@ -217,7 +222,10 @@ def Subscriptions():
 
     Dict['subscriptions_accessed'] = subscriptions_changes.since
 
-    oc = ObjectContainer(title1=NAME, title2='My Subscriptions', no_cache=True)
+    if not len(subscriptions):
+        return Alert('Subscriptions', L('alert_no_subscriptions'))
+
+    oc = ObjectContainer(title1=NAME, title2='My Subscriptions') #, no_cache=True)
     for url in subscriptions:
         entry = session.public_client.get_podcast_data(url)
         oc.add(TVShowObject(
@@ -256,7 +264,7 @@ def Toplist(page=0):
 
     Dict['toplist_accessed'] = now
 
-    oc = ObjectContainer(title1=NAME, title2='Most Popular')
+    oc = ObjectContainer(title1=NAME, title2=L('toplist'))
     for index, entry in enumerate(toplist):
         oc.add(TVShowObject(
             key=Callback(Podcast, entry=entry),
@@ -276,12 +284,16 @@ def Recommendations(page=0):
 
     recommendations = session.client.get_suggestions()
 
-    oc = ObjectContainer(title1=NAME, title2='My Recommendations')
+    if not len(recommendations):
+        return ObjectContainer(no_history=True, header=L('recommendations'),
+                               message=L('alert_no_recommendations'))
+
+    oc = ObjectContainer(title1=NAME, title2=L('recommendations'))
     for index, entry in enumerate(recommendations):
         Log('%4d. %s (%d)' % (index+1, entry.title, entry.subscribers))
         oc.add(TVShowObject(
             key=Callback(Podcast, entry=entry),
-            rating_key=entry.url,
+            rating_key=entry.mygpo_link,
             summary=entry.description,
             thumb=Resource.ContentsOfURLWithFallback(url=entry.logo_url, fallback=ICON),
             title=entry.title,
@@ -289,27 +301,157 @@ def Recommendations(page=0):
     return oc
 
 
+# @route('/music/gpodder/podcast/{page}')
 @public_client_required
 def Podcast(entry):
     oc = ObjectContainer(title1=NAME, title2=entry.title)
 
-    oc.add(DirectoryObject(
+    oc.add(TVShowObject(
+        key=Callback(Episodes, entry=entry),
+        rating_key=entry.mygpo_link,
         thumb=Resource.ContentsOfURLWithFallback(url=entry.logo_url, fallback=ICON),
         summary=entry.description,
-        title='Subscribe',
+        title='Episodes',
     ))
 
-    if session.client:
-        oc.add(DirectoryObject(
-            key=Callback(Unsubscribe, entry=entry),
-            title='Unsubscribe',
-        ))
-    else:
-        oc.add(DirectoryObject(
-            key=Callback(Subscribe, entry=entry),
-            title='Subscribe',
-        ))
+    # if session.client:
+    #     oc.add(DirectoryObject(
+    #         key=Callback(Unsubscribe, entry=entry),
+    #         title='Unsubscribe',
+    #     ))
+    # else:
+    #     oc.add(DirectoryObject(
+    #         key=Callback(Subscribe, entry=entry),
+    #         title='Subscribe',
+    #     ))
     return oc
+
+
+@public_client_required
+def Episodes(entry):
+    # Log(entry.url)
+    # res = session.feedservice_client.parse_feeds(entry.url)
+    # feed = res.get_feed(entry.url)
+
+    params = {'url': entry.url, 'use_cache': 1, 'process_text': 'strip_html'}
+    # params['episode'] = 0
+    url = '%s?%s' % (FEEDSERVICE, urlencode(params))
+    headers = {'Accept': 'application/json', 'Accept-Encoding': 'gzip'}
+    res = HTTP.Request(url, headers=headers, immediate=True)
+    feed = JSON.ObjectFromString(res.content)
+
+    episodes = feed[0]['episodes']
+    # Log(episodes[0]['files'][0]['urls'][0])
+
+    oc = ObjectContainer(title1=NAME, title2=entry.title)
+
+    for episode in episodes:
+        title = '%s - %s' % (entry.title, episode['title'])
+
+        oc.add(TrackObject(
+            key=episode['guid'],
+            rating_key=episode['guid'],
+            # title=episode['title'],
+            title=title,
+            artist=episode['author'],
+            items=[MediaObject(
+                audio_channels=2,
+                audio_codec=AudioCodec.MP3, # parse mimetype for this
+                # duration=776000,
+                parts=[PartObject(
+                    key=episode['files'][0]['urls'][0],
+                    # duration=776000,
+                )]
+            )]
+        ))
+
+        # obj = DirectoryObject(
+        #     key=Callback(Media, entry=entry, episode=episode),
+        #     # rating_key=episode['guid'],
+        #     title=episode['title'],
+        #     summary=episode['description'],
+        #     # originally_available_at=episode.released, # timestamp -> date object
+        #     # artist=episode['author'],
+        #     # producers=[episode['author']],
+        # )
+        # obj.add(MediaObject(
+        #     audio_channels=2,
+        #     audio_codec=AudioCodec.MP3, # parse mimetype for this
+        #     video_codec=VideoCodec.H264,
+        #     container=Container.MP4,
+        #     # duration=int(episode['duration'] * 1000),
+        #     # duration=776000,
+        #     parts=[PartObject(
+        #         # key=episode['files'][0]['urls'][0],
+        #         key='http://skeptoid.com/audio/skeptoid-4369.mp3',
+        #         # duration=int(episode['duration'] * 1000),
+        #         # duration=776000,
+        #     )]
+        #   ))
+        # oc.add(obj)
+        # oc.add(TrackObject(
+        #     key=episode['link'],
+        #     rating_key=episode['link'],
+        #     title=episode['title'],
+        #     # summary=episode['description'],
+        #     # duration=int(episode['duration'] * 1000),
+        #     # originally_available_at=episode.released, # timestamp -> date object
+        #     artist=episode['author'],
+        #     items=[MediaObject(
+        #             audio_channels=2,
+        #             audio_codec=AudioCodec.MP3, # parse mimetype for this
+        #             # duration=int(episode['duration'] * 1000),
+        #             parts=[PartObject(
+        #                 key=episode['files'][0]['urls'][0],
+        #                 # duration=int(episode['duration'] * 1000),
+        #             )]
+        #           )]
+        # ))
+    # oc.add(TrackObject(
+    #     key='foo',
+    #     rating_key='foo',
+    #     title='Foo',
+    #     artist='Bar',
+    #     album='Baz',
+    #     items=[MediaObject(
+    #             audio_channels=2,
+    #             audio_codec=AudioCodec.MP3, # parse mimetype for this
+    #             duration=776000,
+    #             parts=[PartObject(
+    #                 key='http://skeptoid.com/audio/skeptoid-4369.mp3',
+    #                 duration=776000,
+    #             )]
+    #           )]
+    # ))
+    # oc.add(TrackObject(
+    #     url=url,
+    # ))
+
+    return oc
+
+
+def Media(entry, episode):
+    title = '%s - %s' % (entry.title, episode['title'])
+    oc = ObjectContainer(title1=NAME, title2=title)
+
+    oc.add(TrackObject(
+        key=episode['guid'],
+        rating_key=episode['guid'],
+        title=episode['title'],
+        artist=episode['author'],
+        items=[MediaObject(
+            audio_channels=2,
+            audio_codec=AudioCodec.MP3, # parse mimetype for this
+            # duration=776000,
+            parts=[PartObject(
+                key=episode['files'][0]['urls'][0],
+                # duration=776000,
+            )]
+        )]
+    ))
+
+    return oc
+
 
 
 @client_required
@@ -320,8 +462,7 @@ def Subscribe(entry):
         raise
 
     success_message = ' '.join((L('subscribed'), entry.title))
-    return ObjectContainer(no_history=True, header='Subscriptions',
-                           message=success_message)
+    return Alert('Subscriptions', success_message)
 
 
 @client_required
@@ -332,5 +473,4 @@ def Unsubscribe(entry):
         raise
 
     success_message = ' '.join((L('unsubscribed'), entry.title))
-    return ObjectContainer(no_history=True, header='Subscriptions',
-                           message=success_message)
+    return Alert('Subscriptions', success_message)
