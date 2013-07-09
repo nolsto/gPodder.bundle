@@ -307,7 +307,7 @@ def Podcast(entry):
     oc = ObjectContainer(title1=NAME, title2=entry.title)
 
     oc.add(TVShowObject(
-        key=Callback(Episodes, entry=entry),
+        key=Callback(Episodes, podcast=entry),
         rating_key=entry.mygpo_link,
         thumb=Resource.ContentsOfURLWithFallback(url=entry.logo_url, fallback=ICON),
         summary=entry.description,
@@ -328,12 +328,12 @@ def Podcast(entry):
 
 
 @public_client_required
-def Episodes(entry):
-    # Log(entry.url)
-    # res = session.feedservice_client.parse_feeds(entry.url)
-    # feed = res.get_feed(entry.url)
+def Episodes(podcast):
+    # Log(podcast.url)
+    # res = session.feedservice_client.parse_feeds(podcast.url)
+    # feed = res.get_feed(podcast.url)
 
-    params = {'url': entry.url, 'use_cache': 1, 'process_text': 'strip_html'}
+    params = {'url': podcast.url, 'use_cache': 1, 'process_text': 'strip_html'}
     # params['episode'] = 0
     url = '%s?%s' % (FEEDSERVICE, urlencode(params))
     headers = {'Accept': 'application/json', 'Accept-Encoding': 'gzip'}
@@ -343,23 +343,33 @@ def Episodes(entry):
     episodes = feed[0]['episodes']
     # Log(episodes[0]['files'][0]['urls'][0])
 
-    oc = ObjectContainer(title1=NAME, title2=entry.title)
+    oc = ObjectContainer(title1=NAME, title2=podcast.title)
 
-    for episode in episodes:
-        title = '%s - %s' % (entry.title, episode['title'])
-
+    for entry in episodes:
+        title = '%s - %s' % (podcast.title, entry['title'])
+        episode = api.public.Episode(
+            title=entry['title'],
+            url=entry['link'],
+            podcast_title=podcast.title,
+            podcast_url=podcast.url,
+            description=entry['description'],
+            website=feed['link'],
+            released=entry['released'],
+            mygpo_link=None,
+        )
         oc.add(TrackObject(
-            key=episode['guid'],
-            rating_key=episode['guid'],
-            # title=episode['title'],
-            title=title,
-            artist=episode['author'],
+            key=episode.url,
+            rating_key=episode.url,
+            title=episode.title,
+            summary=episode.description,
+            artist=entry['author'],
+            tags=feed['tags'],
             items=[MediaObject(
                 audio_channels=2,
                 audio_codec=AudioCodec.MP3, # parse mimetype for this
                 # duration=776000,
                 parts=[PartObject(
-                    key=episode['files'][0]['urls'][0],
+                    key=entry['files'][0]['urls'][0],
                     # duration=776000,
                 )]
             )]
