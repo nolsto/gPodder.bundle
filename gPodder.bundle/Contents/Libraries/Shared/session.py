@@ -1,4 +1,4 @@
-from mygpoclient import api, feeds
+from mygpoclient import api
 
 
 FEEDSERVICE = 'http://127.0.0.1:8000'
@@ -14,10 +14,8 @@ class Session(object):
         self._device_name = ''
         self._username = ''
         self._password = ''
-        self._test_feed_url = ''
         self._public_client = None
         self._client = None
-        self._feedservice_client = None
         self._public_client_is_dirty = True
         self._client_is_dirty = True
         self._device_name_is_dirty = True
@@ -75,11 +73,6 @@ class Session(object):
 
 
     @property
-    def feedservice_client(self):
-        return self._feedservice_client
-
-
-    @property
     def public_client_is_dirty(self):
         return self._public_client_is_dirty
 
@@ -107,10 +100,7 @@ class Session(object):
         client = api.public.PublicClient(self._server)
         try:
             # attempt a minimal-effort API call to test client viability
-            # save a url from the result to be used in creating
-            # the feedservice client
-            toplist = client.get_toplist(1)
-            self._test_feed_url = toplist[0].url
+            client.get_toplist(1)
         except Exception, e:
             self._public_client = None
         else:
@@ -132,23 +122,6 @@ class Session(object):
             self._client = client
         self._client_is_dirty = False
         return self._client
-
-
-    def create_feedservice_client(self):
-        '''Create and return a new feedservice client
-
-        Must be called after `create_public_client` has as it relies on
-        `test_feed_url` being defined at the time of invocation.
-        '''
-        client = feeds.FeedserviceClient(self._username, self._password, FEEDSERVICE)
-        try:
-            # attempt a minimal-effort API call to test client viability
-            client.parse_feeds([self._test_feed_url])
-        except Exception, e:
-            self._feedservice_client = None
-        else:
-            self._feedservice_client = client
-        return self._feedservice_client
 
 
     def update_device(self):
