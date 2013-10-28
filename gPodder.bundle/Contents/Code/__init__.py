@@ -4,8 +4,7 @@ from time import time
 from urllib2 import URLError
 from urllib import urlencode
 
-import feedparser
-from mygpoclient import api
+from mygpoclient.simple import Podcast
 
 from session import Session
 
@@ -13,10 +12,10 @@ from session import Session
 NAME = 'gPodder'
 ICON = 'icon-default.png'
 DEVICE_ID = 'plex-gpodder-plugin.%s' % Network.Hostname
+FEEDSERVICE_URL = 'http://feeds.gpodder.net'
 CACHE_TIME = 86400 # one day
-FEEDSERVICE = 'http://feeds.gpodder.net'
 
-cerealizer.register(api.simple.Podcast)
+cerealizer.register(Podcast)
 
 session = None
 
@@ -114,7 +113,7 @@ def ValidatePrefs():
         return ErrorInvalidPrefs(L('prefs_incomplete'))
 
     # update session
-    session.set_prefs(server, device_name, username, password)
+    session.set_vars(server, device_name, username, password)
 
     # clear cached public client data if the webservice has successfully changed
     if session.public_client_is_dirty:
@@ -141,8 +140,9 @@ def ValidatePrefs():
 def Start():
     global session
 
-    session = Session(DEVICE_ID)
+    session = Session(DEVICE_ID, FEEDSERVICE_URL)
     ValidatePrefs()
+    session.create_feedservice_client()
 
 
 #==============================================================================
@@ -226,6 +226,7 @@ def Toplist(page=0):
 # @route('/music/gpodder/podcast/{page}')
 @public_client_required
 def Podcast(entry):
+    Log(entry.url)
     oc = ObjectContainer(title1=NAME, title2=entry.title)
 
     oc.add(TVShowObject(
@@ -236,38 +237,38 @@ def Podcast(entry):
         title='Episodes',
     ))
 
+    # TODO: Check to see if this is in user's subscriptions and present
+    # subscribe/unsubscribe button accordingly
     if session.client:
         oc.add(DirectoryObject(
             key=Callback(Subscribe, entry=entry),
             title='Subscribe',
         ))
 
-    # if session.client:
-    #     oc.add(DirectoryObject(
-    #         key=Callback(Unsubscribe, entry=entry),
-    #         title='Unsubscribe',
-    #     ))
-    # else:
-    #     oc.add(DirectoryObject(
-    #         key=Callback(Subscribe, entry=entry),
-    #         title='Subscribe',
-    #     ))
     return oc
 
 
 @public_client_required
 def Episodes(podcast):
-    # Podcast Object
-    # def __init__(self, url, title, description, website, subscribers, subscribers_last_week, mygpo_link, logo_url):
-    response = feedparser.parse(podcast.url)
-    entries = response.entries
+
+    response = session.feedservice_client.parse_feeds([podcast.url]).get_feed(podcast.url)
+    entries = response['episodes']
 
     oc = ObjectContainer(title1=NAME, title2=podcast.title)
     for entry in entries:
+        # TODO: Make additional parser to get all these properties
+        # to create the track object
         title = '%s - %s' % (podcast.title, entry.get('title', 'No Title'))
+
+        try:
+            duration = int(entry.get('duration', 0)) * 1000
+        except Exception, e:
+            duration = None
+
         oc.add(TrackObject(
-            key=entry.link,
-            rating_key=entry.link,
+            key=entry['link'],
+            rating_key=entry['link'],
+            # TODO: make language-agnostic fallbacks
             title=entry.get('title', 'No Title'),
             summary=entry.get('subtitle', 'No Summary'),
             artist=entry.get('author', 'No Author'),
@@ -276,8 +277,8 @@ def Episodes(podcast):
                 audio_channels=2,
                 audio_codec=AudioCodec.MP3, # parse mimetype for this
                 parts=[PartObject(
-                    key=entry.links[0]['href'],
-                    duration=int(entry.links[0]['length']),
+                    key=entry['files'][0]['urls'][0],
+                    duration=duration,
                 )]
             )]
         ))

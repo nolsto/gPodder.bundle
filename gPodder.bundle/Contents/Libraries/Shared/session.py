@@ -1,7 +1,6 @@
-from mygpoclient import api
-
-
-FEEDSERVICE = 'http://127.0.0.1:8000'
+from mygpoclient.api import MygPodderClient
+from mygpoclient.feeds import FeedserviceClient
+from mygpoclient.public import PublicClient
 
 
 class UnviablePublicClient(Exception):
@@ -16,12 +15,14 @@ class Session(object):
     '''docstring for Session
     '''
 
-    def __init__(self, device_id):
+    def __init__(self, device_id, feedservice_url):
         self._device_id = device_id
+        self._feedservice_url = feedservice_url
         self._server = ''
         self._device_name = ''
         self._username = ''
         self._password = ''
+        self._feedservice_client = None
         self._public_client = None
         self._client = None
         self._public_client_is_dirty = True
@@ -71,6 +72,11 @@ class Session(object):
 
 
     @property
+    def feedservice_client(self):
+        return self._feedservice_client
+
+
+    @property
     def public_client(self):
         return self._public_client
 
@@ -95,18 +101,26 @@ class Session(object):
         return self._device_name_is_dirty
 
 
-    def set_prefs(self, server, device_name, username, password):
+    def set_vars(self, server, device_name, username, password):
         self.server = server
         self.device_name = device_name
         self.username = username
         self.password = password
 
 
+    def create_feedservice_client(self):
+        '''Create and return a new feedservice client
+        '''
+        self._feedservice_client = FeedserviceClient(self._username,
+                                                     self._password,
+                                                     self._feedservice_url)
+
+
     def create_public_client(self):
         '''Create and return a new public client
         '''
         self._public_client = None
-        client = api.public.PublicClient(self._server)
+        client = PublicClient(self._server)
         try:
             # attempt a minimal-effort API call to test client viability
             client.get_toplist(1)
@@ -121,7 +135,7 @@ class Session(object):
         '''Create and return a new client
         '''
         self._client = None
-        client = api.MygPodderClient(self._username, self._password, self._server)
+        client = MygPodderClient(self._username, self._password, self._server)
         try:
             # attempt a minimal-effort API call to test client viability
             client.get_suggestions(1)
