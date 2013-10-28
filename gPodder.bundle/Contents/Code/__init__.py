@@ -14,7 +14,7 @@ NAME = 'gPodder'
 ICON = 'icon-default.png'
 DEVICE_ID = 'plex-gpodder-plugin.%s' % Network.Hostname
 CACHE_TIME = 86400 # one day
-FEEDSERVICE = 'http://127.0.0.1:8000/parse'
+FEEDSERVICE = 'http://feeds.gpodder.net'
 
 cerealizer.register(api.simple.Podcast)
 
@@ -81,8 +81,12 @@ def remove_client_cache():
 
 
 def Alert(header, message):
-    return ObjectContainer(header=header, message=message,
-                           no_history=True, no_cache=True)
+    return ObjectContainer(
+        header=header,
+        message=message,
+        no_history=True,
+        no_cache=True,
+    )
 
 def Error(message):
     return Alert('Error', message)
@@ -91,6 +95,7 @@ def Error(message):
 def ErrorInvalidPrefs(message):
     '''mygpo API error with current preferences
     '''
+
     oc = Error(message)
     oc.add(PrefsObject(title=L('preferences')))
     return oc
@@ -104,21 +109,29 @@ def ValidatePrefs():
     username = Prefs['username']
     password = Prefs['password']
 
+    # ensure all preference fields are filled out
     if not (server and device_name and username and password):
         return ErrorInvalidPrefs(L('prefs_incomplete'))
 
+    # update session
     session.set_prefs(server, device_name, username, password)
 
+    # clear cached public client data if the webservice has successfully changed
     if session.public_client_is_dirty:
-        if not session.create_public_client():
+        try:
+            session.create_public_client()
+        except Exception, e:
             return ErrorInvalidPrefs(L('prefs_bad_public_client'))
-        else:
+        finally:
             remove_public_client_cache()
 
+    # clear cached client data if username/password has successfully changed
     if session.client_is_dirty:
-        if not session.create_client():
+        try:
+            session.create_client()
+        except Exception, e:
             return ErrorInvalidPrefs(L('prefs_bad_client'))
-        else:
+        finally:
             remove_client_cache()
 
     if session.device_name_is_dirty:
@@ -129,11 +142,7 @@ def Start():
     global session
 
     session = Session(DEVICE_ID)
-    session.set_prefs(Prefs['server'], Prefs['device_name'], Prefs['username'],
-                      Prefs['password'])
-    session.create_public_client()
-    session.create_client()
-    session.update_device()
+    ValidatePrefs()
 
 
 #==============================================================================
@@ -143,6 +152,7 @@ def Start():
 @handler('/music/gpodder', NAME, thumb=ICON)
 def MainMenu():
     oc = ObjectContainer(title1=NAME, no_cache=True)
+    oc.add(DirectoryObject(key=Callback(Recent), title=L('recent')))
     oc.add(DirectoryObject(key=Callback(Subscriptions), title=L('subscriptions')))
     oc.add(DirectoryObject(key=Callback(Recommendations), title=L('recommendations')))
     oc.add(DirectoryObject(key=Callback(Toplist), title=L('toplist')))
@@ -175,69 +185,6 @@ def Search(query):
     return oc
 
 
-@route('/music/gpodder/subscriptions')
-@client_required
-def Subscriptions():
-    '''Subscriptions
-
-    List all podcasts user is currently subscribed to.
-    Allow user to select a podcast and see its episodes or unsubscribe from it.
-    '''
-
-    # 1. Pull episode changes since stored 'since' timestamp
-    #    (set to zero if nonexistant)
-    # 2. Save 'since' timestamp from episode changes
-    # If saved subscriptions list exists:
-    #   3. append the episode changes add list to subscriptions list
-    #   4. remove the episode changes remove list items from subscriptions list
-    #   5. Save updated subscriptions
-    # If saved subscriptions list doesn't exist:
-    #   3. Save subscriptions changes add list as subscriptions
-    try:
-        since = Dict['subscriptions_accessed'] or 0
-        subscriptions_changes = session.client.pull_subscriptions(DEVICE_ID, since)
-    except Exception, e:
-        return Error(L('error_subscriptions'))
-
-    if Data.Exists('subscriptions') and since > 0:
-        Log('Using cached subscriptions')
-
-        subscriptions = cerealizer.loads(Data.Load('subscriptions'))
-        initial_subscriptions = subscriptions[:]
-        # remove urls from subscriptions changes
-        for url in subscriptions_changes.remove:
-            if url in subscriptions:
-                subscriptions.remove(url)
-        # add urls from subscriptions changes
-        subscriptions += subscriptions_changes.add
-        # if subscriptions list has changed at all from the above two
-        # operations, write subscriptions to disk
-        if subscriptions != initial_subscriptions:
-            Data.Save('subscriptions', cerealizer.dumps(subscriptions))
-    else:
-        Log('Using requested subscriptions')
-
-        subscriptions = subscriptions_changes.add[:]
-        Data.Save('subscriptions', cerealizer.dumps(subscriptions))
-
-    Dict['subscriptions_accessed'] = subscriptions_changes.since
-
-    if not len(subscriptions):
-        return Alert('Subscriptions', L('alert_no_subscriptions'))
-
-    oc = ObjectContainer(title1=NAME, title2='My Subscriptions') #, no_cache=True)
-    for url in subscriptions:
-        entry = session.public_client.get_podcast_data(url)
-        oc.add(TVShowObject(
-            key=Callback(Podcast, entry=entry),
-            rating_key=entry.url,
-            summary=entry.description,
-            thumb=Resource.ContentsOfURLWithFallback(url=entry.logo_url, fallback=ICON),
-            title=entry.title,
-        ))
-    return oc
-
-
 @route('/music/gpodder/toplist/{page}')
 @public_client_required
 def Toplist(page=0):
@@ -257,43 +204,18 @@ def Toplist(page=0):
         except Exception, e:
             return Error(L('error_toplist'))
         Data.SaveObject('toplist', toplist)
+        Dict['toplist_accessed'] = now
     else:
         Log('Using cached toplist')
 
         toplist = Data.LoadObject('toplist')
 
-    Dict['toplist_accessed'] = now
 
     oc = ObjectContainer(title1=NAME, title2=L('toplist'))
     for index, entry in enumerate(toplist):
         oc.add(TVShowObject(
             key=Callback(Podcast, entry=entry),
             rating_key=entry.url,
-            summary=entry.description,
-            thumb=Resource.ContentsOfURLWithFallback(url=entry.logo_url, fallback=ICON),
-            title=entry.title,
-        ))
-    return oc
-
-
-@route('/music/gpodder/recommendations/{page}')
-@client_required
-def Recommendations(page=0):
-    '''Recommended podcasts
-    '''
-
-    recommendations = session.client.get_suggestions()
-
-    if not len(recommendations):
-        return ObjectContainer(no_history=True, header=L('recommendations'),
-                               message=L('alert_no_recommendations'))
-
-    oc = ObjectContainer(title1=NAME, title2=L('recommendations'))
-    for index, entry in enumerate(recommendations):
-        Log('%4d. %s (%d)' % (index+1, entry.title, entry.subscribers))
-        oc.add(TVShowObject(
-            key=Callback(Podcast, entry=entry),
-            rating_key=entry.mygpo_link,
             summary=entry.description,
             thumb=Resource.ContentsOfURLWithFallback(url=entry.logo_url, fallback=ICON),
             title=entry.title,
@@ -313,6 +235,12 @@ def Podcast(entry):
         summary=entry.description,
         title='Episodes',
     ))
+
+    if session.client:
+        oc.add(DirectoryObject(
+            key=Callback(Subscribe, entry=entry),
+            title='Subscribe',
+        ))
 
     # if session.client:
     #     oc.add(DirectoryObject(
@@ -352,6 +280,102 @@ def Episodes(podcast):
                     duration=int(entry.links[0]['length']),
                 )]
             )]
+        ))
+    return oc
+
+
+@route('/music/gpodder/recent')
+@client_required
+def Recent():
+    '''Recently Aired
+
+    List the most-recently aired episodes in user's subscriptions.
+    '''
+
+    oc = ObjectContainer(title1=NAME, title2='Recently Aired')
+    return oc
+
+
+@route('/music/gpodder/subscriptions')
+@client_required
+def Subscriptions():
+    '''Subscriptions
+
+    List all podcasts user is currently subscribed to.
+    Allow user to select a podcast and see its episodes or unsubscribe from it.
+    '''
+
+    # 1. Pull episode changes since stored 'since' timestamp
+    #    (set to zero if nonexistant)
+    # 2. Save 'since' timestamp from episode changes
+    # If saved subscriptions list exists:
+    #   3. append the episode changes add list to subscriptions list
+    #   4. remove the episode changes remove list items from subscriptions list
+    #   5. Save updated subscriptions
+    # If saved subscriptions list doesn't exist:
+    #   3. Save subscriptions changes add list as subscriptions
+
+    since = Dict['subscriptions_accessed'] or 0
+    try:
+        subscriptions_changes = session.client.pull_subscriptions(DEVICE_ID, since)
+    except Exception, e:
+        return Error(L('error_subscriptions'))
+    Dict['subscriptions_accessed'] = subscriptions_changes.since
+
+    if Data.Exists('subscriptions'):
+        subscriptions = cerealizer.loads(Data.Load('subscriptions'))
+        initial_subscriptions = subscriptions[:]
+        # remove urls returned from subscriptions changes
+        for url in subscriptions_changes.remove:
+            if url in subscriptions:
+                subscriptions.remove(url)
+        # add urls returned from subscriptions changes
+        subscriptions += subscriptions_changes.add
+        # if subscriptions list has changed at all from the above two
+        # operations, write subscriptions to disk
+        if subscriptions != initial_subscriptions:
+            Data.Save('subscriptions', cerealizer.dumps(subscriptions))
+    else:
+        subscriptions = subscriptions_changes.add[:]
+        Data.Save('subscriptions', cerealizer.dumps(subscriptions))
+
+    if not len(subscriptions):
+        return Alert('Subscriptions', L('alert_no_subscriptions'))
+
+    oc = ObjectContainer(title1=NAME, title2='My Subscriptions')
+    for url in subscriptions:
+        entry = session.public_client.get_podcast_data(url)
+        oc.add(TVShowObject(
+            key=Callback(Podcast, entry=entry),
+            rating_key=entry.url,
+            summary=entry.description,
+            thumb=Resource.ContentsOfURLWithFallback(url=entry.logo_url, fallback=ICON),
+            title=entry.title,
+        ))
+    return oc
+
+
+@route('/music/gpodder/recommendations/{page}')
+@client_required
+def Recommendations(page=0):
+    '''Recommended podcasts
+    '''
+
+    recommendations = session.client.get_suggestions()
+
+    if not len(recommendations):
+        return ObjectContainer(no_history=True, header=L('recommendations'),
+                               message=L('alert_no_recommendations'))
+
+    oc = ObjectContainer(title1=NAME, title2=L('recommendations'))
+    for index, entry in enumerate(recommendations):
+        Log('%4d. %s (%d)' % (index+1, entry.title, entry.subscribers))
+        oc.add(TVShowObject(
+            key=Callback(Podcast, entry=entry),
+            rating_key=entry.mygpo_link,
+            summary=entry.description,
+            thumb=Resource.ContentsOfURLWithFallback(url=entry.logo_url, fallback=ICON),
+            title=entry.title,
         ))
     return oc
 

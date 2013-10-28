@@ -4,6 +4,14 @@ from mygpoclient import api
 FEEDSERVICE = 'http://127.0.0.1:8000'
 
 
+class UnviablePublicClient(Exception):
+    """docstring for UnviablePublicClient"""
+
+
+class UnviableClient(Exception):
+    """docstring for UnviableClient"""
+
+
 class Session(object):
     '''docstring for Session
     '''
@@ -97,31 +105,31 @@ class Session(object):
     def create_public_client(self):
         '''Create and return a new public client
         '''
+        self._public_client = None
         client = api.public.PublicClient(self._server)
         try:
             # attempt a minimal-effort API call to test client viability
             client.get_toplist(1)
         except Exception, e:
-            self._public_client = None
+            raise UnviablePublicClient()
         else:
             self._public_client = client
-        self._public_client_is_dirty = False
-        return self._public_client
+            self._public_client_is_dirty = False
 
 
     def create_client(self):
         '''Create and return a new client
         '''
+        self._client = None
         client = api.MygPodderClient(self._username, self._password, self._server)
         try:
             # attempt a minimal-effort API call to test client viability
             client.get_suggestions(1)
         except Exception, e:
-            self._client = None
+            raise UnviableClient()
         else:
             self._client = client
-        self._client_is_dirty = False
-        return self._client
+            self._client_is_dirty = False
 
 
     def update_device(self):
@@ -129,8 +137,6 @@ class Session(object):
             self._client.update_device_settings(self._device_id, type='server',
                                                 caption=self._device_name)
         except Exception, e:
-            raise
+            raise e
         else:
-            pass
-        finally:
             pass
