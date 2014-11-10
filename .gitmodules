@@ -1,0 +1,6 @@
+[submodule "gPodder.bundle/Contents/Libraries/Shared/mygpoclient_repo"]
+	path = gPodder.bundle/Contents/Libraries/Shared/mygpoclient_repo
+	url = https://github.com/gpodder/mygpoclient.git
+[submodule "gPodder.bundle/Contents/Libraries/Shared/podcastparser_repo"]
+	path = gPodder.bundle/Contents/Libraries/Shared/podcastparser_repo
+	url = https://github.com/gpodder/podcastparser.git
