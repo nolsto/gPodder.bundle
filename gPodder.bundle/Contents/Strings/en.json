@@ -4,25 +4,40 @@
   "recommendations": "My Recommendations",
   "toplist": "Most Popular",
   "search": "Search",
+  "subscribe": "Subscribe",
   "preferences": "Preferences",
 
-  "search_prompt": "Search Podcasts",
-  "search_results": "Search Results",
+  "recent summary": "The most recently released episodes from your subscriptions.",
+  "subscriptions summary": "All podcasts you are currently subscribed to.",
+  "recommendations summary": "Podcasts recommended to you based on your subscriptions.",
+  "toplist summary": "The current 50 most popular podcasts on the webservice.",
+  "search summary": "Search for any podcast on the webservice.",
+  "subscribe summary": "Enter a podcast's feed URL to subscribe to it.",
+  "preferences summary": "Your webservice and account settings.",
+  "subscribe to summary": "Add this podcast to your subscriptions here and in your account.",
+  "unsubscribe from summary": "Remove this podcast from your subscriptions here and in your account.",
 
-  "invalid_public_client": "Please set Webservice in Preferences.",
-  "invalid_client": "Please set username and password in Preferences.",
+  "search prompt": "Search Feeds",
+  "search results": "Search Results",
 
-  "prefs_incomplete": "Please set all fields in Preferences.",
-  "prefs_bad_public_client": "Could not connect to webservice.",
-  "prefs_bad_client": "Could not authenticate username & password.",
+  "invalid public client": "Please set webservice in Preferences.",
+  "invalid client": "Please set webservice, username and password in Preferences.",
 
-  "error_search": "Search Timed out.",
-  "error_toplist": "Unable to get toplist.",
-  "error_subscriptions": "Unable to get subscriptions.",
+  "prefs incomplete": "Please set server in Preferences.",
+  "invalid public client": "Could not connect to webservice.",
+  "invalid client": "Could not authenticate username & password.",
 
-  "alert_no_subscriptions": "You have no subscriptions",
-  "alert_no_recommendations": "You have no recommendations",
+  "search error": "Search Timed out.",
+  "toplist error": "Unable to get toplist.",
+  "subscriptions error": "Unable to get subscriptions.",
+  "url error": "Podcast feed URL not found.",
 
-  "subscribed": "Subscribed to",
-  "unsubscribed": "Unsubscribed from"
+  "no subscriptions": "You have no subscriptions.",
+  "no recommendations": "You have no recommendations.",
+  "no episodes": "No episodes found.",
+
+  "subscribe prompt": "Please enter the podcast's feed URL",
+  "already subscribed": "Already subscribed to",
+  "subscribed": "Successfully subscribed to",
+  "unsubscribed": "Successfully unsubscribed from"
 }
