@@ -1,10 +1,11 @@
 import cerealizer
 import re
+from cgi import parse_qsl
 from functools import wraps
 from operator import itemgetter
 from time import time
 from urllib2 import HTTPError, URLError, urlopen
-from urllib import urlencode
+from urllib import urlencode, unquote
 
 import podcastparser
 from mygpoclient.simple import Podcast
@@ -119,7 +120,7 @@ def create_media_objects(episode):
 
     # filter enclosures on duplicate urls
     enclosures = {i['url']:i for i in enclosures}.values()
-    Log(enclosures)
+
     duration = episode['total_time'] * 1000
 
     objects = []
@@ -281,13 +282,14 @@ def Search(query):
         return Error(_('search error'))
 
     container = ObjectContainer(title1=NAME, title2=_('search results'))
-    for entry in search_results:
+    for item in search_results:
+        entry = {i: getattr(item, i) for i in ['url', 'title', 'description', 'logo_url']}
         container.add(TVShowObject(
             key=Callback(Podcast, entry=entry),
-            rating_key=entry.url,
-            summary=entry.description,
-            thumb=Resource.ContentsOfURLWithFallback(url=entry.logo_url, fallback=ICON),
-            title=entry.title,
+            rating_key=entry['url'],
+            summary=entry['description'],
+            thumb=Resource.ContentsOfURLWithFallback(url=entry['logo_url'], fallback=ICON),
+            title=entry['title'],
         ))
     return container
 
@@ -346,52 +348,56 @@ def Toplist(page=0, container=None):
     container.title1 = NAME
     container.title2 = _('toplist')
 
-    for index, entry in enumerate(toplist):
+    for index, item in enumerate(toplist):
+        # create a dict from the necessary class attributes
+        entry = {i: getattr(item, i) for i in ['url', 'title', 'description', 'logo_url']}
         container.add(DirectoryObject(
-            key=Callback(Podcast, entry=entry),
-            summary=entry.description,
-            thumb=Resource.ContentsOfURLWithFallback(url=entry.logo_url, fallback=ICON),
-            title=entry.title,
+            key=Callback(Podcast, entry_query=urlencode(entry)),
+            summary=entry['description'],
+            thumb=Resource.ContentsOfURLWithFallback(url=entry['logo_url'], fallback=ICON),
+            title=entry['title'],
         ))
     return container
 
 
-# @route(PREFIX + '/podcast/{entry}')
+@route(PREFIX + '/podcast/{entry_query}')
 @public_client_required
-def Podcast(entry, container=None):
+def Podcast(entry_query, container=None):
     """
     Podcast
     """
 
     # if the user is not logged in, just show the episodes
     if not session.client:
-        return Episodes(entry, container)
+        return Episodes(entry_query, container)
+
+    entry = parse_qsl(entry_query)
 
     if not container:
         container = ObjectContainer()
     container.title1 = NAME
-    container.title2 = entry.title
+    container.title2 = entry['title']
     container.no_cache = True
     container.add(DirectoryObject(
-        key=Callback(Episodes, podcast=entry),
-        thumb=Resource.ContentsOfURLWithFallback(url=entry.logo_url, fallback=ICON),
-        summary=entry.description,
+        key=Callback(Episodes, podcast=entry_query),
+        thumb=Resource.ContentsOfURLWithFallback(url=entry['logo_url'], fallback=ICON),
+        summary=entry['description'],
         title=_('Episodes'),
     ))
 
     # Check to see if podcast is in user's subscriptions and present
     # subscribe/unsubscribe objects accordingly
     podcasts = get_updated_subscriptions()
-    if entry.url in [i.url for i in podcasts]:
+    if entry['url'] in [i.url for i in podcasts]:
         obj = DirectoryObject(
-            key=Callback(UnsubscribeFrom, podcast=entry),
+            key=Callback(UnsubscribeFrom, podcast=entry_query),
             title=_('Unsubscribe'),
             summary=_('unsubscribe from summary'),
             thumb=Resource.ExternalPath('icon-remove.png')
         )
     else:
         obj = DirectoryObject(
-            key=Callback(SubscribeTo, podcast=entry),
+            key=Callback(SubscribeTo, podcast=entry_query),
             title=_('Subscribe'),
             summary=_('subscribe to summary'),
             thumb=Resource.ExternalPath('icon-add.png')
@@ -400,14 +406,16 @@ def Podcast(entry, container=None):
     return container
 
 
-# @route(PREFIX + '/episodes/{podcast}')
-def Episodes(podcast, container=None):
+@route(PREFIX + '/episodes/{podcast_query}', allow_sync=True)
+def Episodes(podcast_query, container=None):
     """
     Episodes
     """
 
+    podcast = dict(parse_qsl(podcast_query))
+
     try:
-        response = podcastparser.parse(podcast.url, urlopen(podcast.url))
+        response = podcastparser.parse(podcast['url'], urlopen(podcast['url']))
     except HTTPError:
         return Error(_('url error'))
     episodes = response['episodes']
@@ -418,31 +426,35 @@ def Episodes(podcast, container=None):
     if not container:
         container = ObjectContainer()
     container.title1 = NAME
-    container.title2 = podcast.title
+    container.title2 = podcast['title']
 
     for entry in episodes:
-        container.add(Track(entry, podcast.logo_url))
+        entry['logo_url'] = podcast['logo_url']
+        container.add(Episode(urlencode(entry)))
     return container
 
 
-# @route(PREFIX + '/track/{episode}')
-def Track(episode, logo_url, include_container=False):
+@route(PREFIX + '/episode/{entry_query}')
+def Episode(entry_query, include_container=False):
     """
-    Track
+    Episode
     """
 
-    summary = podcastparser.remove_html_tags(episode.get('description'))
+    entry = parse_qsl(entry_query)
+    Log(entry)
+
+    summary = podcastparser.remove_html_tags(entry.get('description'))
     if not summary:
-        summary = episode.get('subtitle', _('No Summary'))
+        summary = entry.get('subtitle', _('No Summary'))
 
     obj = TrackObject(
-        key=Callback(Track, episode=episode, logo_url=logo_url, include_container=True),
-        rating_key=episode['guid'],
-        title=episode.get('title', _('No Title')),
-        thumb=Resource.ContentsOfURLWithFallback(url=logo_url, fallback=ICON),
+        key=Callback(Episode, entry_query=entry_query, include_container=True),
+        rating_key=entry['guid'],
+        title=entry.get('title', _('No Title')),
+        thumb=Resource.ContentsOfURLWithFallback(url=entry['logo_url'], fallback=ICON),
         summary=summary,
-        duration=episode['total_time'] * 1000,
-        items=create_media_objects(episode)
+        duration=entry['total_time'] * 1000,
+        items=create_media_objects(entry)
     )
 
     if include_container:
@@ -486,12 +498,13 @@ def Subscriptions(container=None):
     container.title1 = NAME
     container.title2 = _('My Subscriptions')
 
-    for entry in podcasts:
+    for item in podcasts:
+        entry = {i: getattr(item, i) for i in ['url', 'title', 'description', 'logo_url']}
         container.add(DirectoryObject(
             key=Callback(Podcast, entry=entry),
-            summary=entry.description,
-            thumb=Resource.ContentsOfURLWithFallback(url=entry.logo_url, fallback=ICON),
-            title=entry.title,
+            summary=entry['description'],
+            thumb=Resource.ContentsOfURLWithFallback(url=entry['logo_url'], fallback=ICON),
+            title=entry['title'],
         ))
     return container
 
@@ -513,13 +526,13 @@ def Recommendations(page=0, container=None):
     container.title1 = NAME
     container.title2 = _('recommendations')
 
-    for index, entry in enumerate(recommendations):
-        Log('%4d. %s (%d)' % (index+1, entry.title, entry.subscribers))
+    for index, item in enumerate(recommendations):
+        entry = {i: getattr(item, i) for i in ['url', 'title', 'description', 'logo_url']}
         container.add(DirectoryObject(
             key=Callback(Podcast, entry=entry),
-            summary=entry.description,
-            thumb=Resource.ContentsOfURLWithFallback(url=entry.logo_url, fallback=ICON),
-            title=entry.title,
+            summary=entry['description'],
+            thumb=Resource.ContentsOfURLWithFallback(url=entry['logo_url'], fallback=ICON),
+            title=entry['title'],
         ))
     return container
 
@@ -527,11 +540,11 @@ def Recommendations(page=0, container=None):
 @client_required
 def SubscribeTo(podcast):
     try:
-        session.client.update_subscriptions(DEVICE_ID, add_urls=[podcast.url])
+        session.client.update_subscriptions(DEVICE_ID, add_urls=[podcast['url']])
     except Exception, e:
         raise
 
-    message = '%s %s' % (_('subscribed'), podcast.title)
+    message = '%s %s' % (_('subscribed'), podcast['title'])
     container = Alert(_('subscriptions'), message)
     return Episodes(podcast, container)
 
@@ -539,10 +552,10 @@ def SubscribeTo(podcast):
 @client_required
 def UnsubscribeFrom(podcast):
     try:
-        session.client.update_subscriptions(DEVICE_ID, remove_urls=[podcast.url])
+        session.client.update_subscriptions(DEVICE_ID, remove_urls=[podcast['url']])
     except Exception, e:
         raise
 
-    message = '%s %s' % (_('unsubscribed'), podcast.title)
+    message = '%s %s' % (_('unsubscribed'), podcast['title'])
     container = Alert(_('subscriptions'), message)
     return Podcast(podcast, container)
