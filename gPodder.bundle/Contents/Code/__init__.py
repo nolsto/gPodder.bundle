@@ -1,11 +1,9 @@
 import cerealizer
-import json
 import re
 from functools import wraps
 from operator import itemgetter
 from time import time
 from urllib2 import HTTPError, URLError, urlopen
-from urllib import quote_plus, unquote_plus
 
 import podcastparser
 from mygpoclient.simple import Podcast
@@ -154,11 +152,11 @@ def podcast_to_dict(obj):
 
 
 def encode(d):
-    return quote_plus(json.dumps(d))
+    return JSON.StringFromObject(d)
 
 
 def decode(s):
-    return json.loads(unquote_plus(s))
+    return JSON.ObjectFromString(s)
 
 
 #==============================================================================
@@ -225,6 +223,10 @@ def ValidatePrefs():
 def Start():
     global session
 
+    # container defaults
+    ObjectContainer.title1 = NAME
+    DirectoryObject.thumb = R(ICON)
+
     session = Session(DEVICE_ID)
     ValidatePrefs()
 
@@ -235,18 +237,18 @@ def Start():
 
 @handler(PREFIX, NAME, thumb=ICON)
 def MainMenu():
-    container = ObjectContainer(title1=NAME)
+    container = ObjectContainer()
     container.add(DirectoryObject(
         key=Callback(Recent),
         title=_('recent'),
         summary=_('recent summary'),
-        thumb=Resource.ExternalPath('icon-recent.png')
+        thumb=R('icon-recent.png')
     ))
     container.add(DirectoryObject(
         key=Callback(Subscriptions),
         title=_('subscriptions'),
         summary=_('subscriptions summary'),
-        thumb=Resource.ExternalPath('icon-subscriptions.png')
+        thumb=R('icon-subscriptions.png')
     ))
     container.add(DirectoryObject(
         key=Callback(Recommendations),
@@ -257,21 +259,21 @@ def MainMenu():
         key=Callback(Toplist),
         title=_('toplist'),
         summary=_('toplist summary'),
-        thumb=Resource.ExternalPath('icon-popular.png')
+        thumb=R('icon-popular.png')
     ))
     container.add(InputDirectoryObject(
         key=Callback(Search),
         title=_('search'),
         prompt=_('search prompt'),
         summary=_('search summary'),
-        thumb=Resource.ExternalPath('icon-search.png')
+        thumb=R('icon-search.png')
     ))
     container.add(InputDirectoryObject(
         key=Callback(Subscribe),
         title=_('subscribe'),
         prompt=_('subscribe prompt'),
         summary=_('subscribe summary'),
-        thumb=Resource.ExternalPath('icon-add.png')
+        thumb=R('icon-add.png')
     ))
     container.add(PrefsObject(
         title=_('preferences'),
@@ -292,7 +294,7 @@ def Search(query):
     except URLError, e:
         return Error(_('search error'))
 
-    container = ObjectContainer(title1=NAME, title2=_('search results'))
+    container = ObjectContainer(title2=_('search results'))
     for item in search_results:
         entry = podcast_to_dict(item)
         container.add(TVShowObject(
@@ -356,7 +358,6 @@ def Toplist(page=0, container=None):
 
     if not container:
         container = ObjectContainer()
-    container.title1 = NAME
     container.title2 = _('toplist')
 
     for index, item in enumerate(toplist):
@@ -370,7 +371,7 @@ def Toplist(page=0, container=None):
     return container
 
 
-@route(PREFIX + '/podcast/{entry_data}')
+@route(PREFIX + '/podcast/{entry_data}', entry_data=dict)
 @public_client_required
 def Podcast(entry_data, container=None):
     """
@@ -381,18 +382,18 @@ def Podcast(entry_data, container=None):
     if not session.client:
         return Episodes(entry_data, container)
 
+
     entry = decode(entry_data)
 
     if not container:
         container = ObjectContainer()
-    container.title1 = NAME
     container.title2 = entry['title']
     container.no_cache = True
     container.add(DirectoryObject(
         key=Callback(Episodes, podcast_data=entry_data),
         thumb=Resource.ContentsOfURLWithFallback(url=entry['logo_url'], fallback=ICON),
         summary=entry['description'],
-        title=_('Episodes'),
+        title='%s: %s' % (_('Episodes'), entry['title'])
     ))
 
     # Check to see if podcast is in user's subscriptions and present
@@ -403,20 +404,20 @@ def Podcast(entry_data, container=None):
             key=Callback(UnsubscribeFrom, podcast=entry),
             title=_('Unsubscribe'),
             summary=_('unsubscribe from summary'),
-            thumb=Resource.ExternalPath('icon-remove.png')
+            thumb=R('icon-remove.png')
         )
     else:
         obj = DirectoryObject(
             key=Callback(SubscribeTo, podcast=entry),
             title=_('Subscribe'),
             summary=_('subscribe to summary'),
-            thumb=Resource.ExternalPath('icon-add.png')
+            thumb=R('icon-add.png')
         )
     container.add(obj)
     return container
 
 
-@route(PREFIX + '/episodes/{podcast_data}', allow_sync=True)
+@route(PREFIX + '/episodes/{podcast_data}', podcast_data=dict, allow_sync=True)
 def Episodes(podcast_data, container=None):
     """
     Episodes
@@ -435,7 +436,6 @@ def Episodes(podcast_data, container=None):
 
     if not container:
         container = ObjectContainer()
-    container.title1 = NAME
     container.title2 = podcast['title']
 
     for entry in episodes:
@@ -444,7 +444,7 @@ def Episodes(podcast_data, container=None):
     return container
 
 
-@route(PREFIX + '/episode/{entry_data}')
+@route(PREFIX + '/episode/{entry_data}', entry_data=dict)
 def Episode(entry_data, include_container=False):
     """
     Episode
@@ -483,7 +483,6 @@ def Recent(container=None):
 
     if not container:
         container = ObjectContainer()
-    container.title1 = NAME
     container.title2 = _('Recently Aired')
     return container
 
@@ -504,7 +503,6 @@ def Subscriptions(container=None):
 
     if not container:
         container = ObjectContainer(no_cache=True)
-    container.title1 = NAME
     container.title2 = _('My Subscriptions')
 
     for item in podcasts:
@@ -532,7 +530,6 @@ def Recommendations(page=0, container=None):
 
     if not container:
         container = ObjectContainer()
-    container.title1 = NAME
     container.title2 = _('recommendations')
 
     for index, item in enumerate(recommendations):
