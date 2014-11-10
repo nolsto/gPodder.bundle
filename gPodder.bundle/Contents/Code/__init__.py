@@ -19,8 +19,12 @@ SUBSCRIPTIONS_CACHE_TIME = 604800 # one week
 EXCLUDE_REGEX = re.compile(r'[^\w\d]|the\s')
 AUDIO_URL_REGEX = re.compile(r'(https?\:\/\/(?:[^/\s]+)?(?:(?:\/[^\s]*)*\/)?(?:[^\s]*?\.(?P<ext>m4[abpvr]|3gp|mp4|aac|mp3)))')
 
-_ = Locale.LocalString
+L = Locale.LocalString
+LF = Locale.LocalStringWithFormat
+
 session = None
+force_subscriptions_update = False
+
 cerealizer.register(Podcast)
 
 
@@ -38,7 +42,7 @@ def public_client_required(func):
         global session
 
         if not session.public_client:
-            return ErrorInvalidPrefs(_('invalid public client'))
+            return ErrorInvalidPrefs(L('public client error'))
         else:
             return func(*args, **kwargs)
     return wrapper
@@ -54,7 +58,7 @@ def client_required(func):
         global session
 
         if not session.client:
-            return ErrorInvalidPrefs(_('invalid client'))
+            return ErrorInvalidPrefs(L('client error'))
         else:
             return func(*args, **kwargs)
     return wrapper
@@ -92,8 +96,11 @@ def get_updated_subscriptions():
     try:
         changes = session.client.pull_subscriptions(DEVICE_ID, since)
     except Exception:
-        return Error(_('subscriptions error'))
+        return Error(L('subscriptions error'))
     Dict['subscriptions_accessed'] = changes.since
+
+    Log('Added:   %s' % changes.add)
+    Log('Removed: %s' % changes.remove)
 
     podcasts = []
     if Data.Exists('subscriptions'):
@@ -172,7 +179,7 @@ def Alert(header, message):
 
 def Error(message):
     Log.Error(message)
-    return Alert(_('Error'), message)
+    return Alert(L('Error'), message)
 
 
 def ErrorInvalidPrefs(message):
@@ -181,7 +188,7 @@ def ErrorInvalidPrefs(message):
     """
 
     container = Error(message)
-    container.add(PrefsObject(title=_('preferences')))
+    container.add(PrefsObject(title=L('preferences')))
     return container
 
 
@@ -190,7 +197,7 @@ def ValidatePrefs():
 
     # ensure at least server field is filled out
     if not (Prefs['server']):
-        return ErrorInvalidPrefs(_('prefs incomplete'))
+        return ErrorInvalidPrefs(L('prefs error'))
 
     # update session properties
     session.server = Prefs['server']
@@ -203,7 +210,7 @@ def ValidatePrefs():
         try:
             session.create_public_client()
         except InvalidClientError:
-            return ErrorInvalidPrefs(_('invalid public client'))
+            return ErrorInvalidPrefs(L('public client error'))
         finally:
             remove_public_client_cache()
 
@@ -212,7 +219,7 @@ def ValidatePrefs():
         try:
             session.create_client()
         except InvalidClientError:
-            return ErrorInvalidPrefs(_('invalid client'))
+            return ErrorInvalidPrefs(L('client error'))
         finally:
             remove_client_cache()
 
@@ -240,44 +247,44 @@ def MainMenu():
     container = ObjectContainer()
     container.add(DirectoryObject(
         key=Callback(Recent),
-        title=_('recent'),
-        summary=_('recent summary'),
+        title=L('recent'),
+        summary=L('recent summary'),
         thumb=R('icon-recent.png')
     ))
     container.add(DirectoryObject(
         key=Callback(Subscriptions),
-        title=_('subscriptions'),
-        summary=_('subscriptions summary'),
+        title=L('subscriptions'),
+        summary=L('subscriptions summary'),
         thumb=R('icon-subscriptions.png')
     ))
     container.add(DirectoryObject(
         key=Callback(Recommendations),
-        title=_('recommendations'),
-        summary=_('recommendations summary')
+        title=L('recommendations'),
+        summary=L('recommendations summary')
     ))
     container.add(DirectoryObject(
         key=Callback(Toplist),
-        title=_('toplist'),
-        summary=_('toplist summary'),
+        title=L('toplist'),
+        summary=L('toplist summary'),
         thumb=R('icon-popular.png')
     ))
     container.add(InputDirectoryObject(
         key=Callback(Search),
-        title=_('search'),
-        prompt=_('search prompt'),
-        summary=_('search summary'),
+        title=L('search'),
+        prompt=L('search prompt'),
+        summary=L('search summary'),
         thumb=R('icon-search.png')
     ))
     container.add(InputDirectoryObject(
         key=Callback(Subscribe),
-        title=_('subscribe'),
-        prompt=_('subscribe prompt'),
-        summary=_('subscribe summary'),
+        title=L('subscribe'),
+        prompt=L('subscribe prompt'),
+        summary=L('subscribe summary'),
         thumb=R('icon-add.png')
     ))
     container.add(PrefsObject(
-        title=_('preferences'),
-        summary=_('preferences summary')
+        title=L('preferences'),
+        summary=L('preferences summary')
     ))
     return container
 
@@ -292,9 +299,9 @@ def Search(query):
     try:
         search_results = session.public_client.search_podcasts(query)
     except URLError, e:
-        return Error(_('search error'))
+        return Error(L('search error'))
 
-    container = ObjectContainer(title2=_('search results'))
+    container = ObjectContainer(title2=L('search results'))
     for item in search_results:
         entry = podcast_to_dict(item)
         container.add(TVShowObject(
@@ -319,17 +326,16 @@ def Subscribe(query):
 
     # if the user is already subscribed to the feed, alert and return
     if url in [i.url for i in podcasts]:
-        message = '%s %s' % (_('already subscribed'), url)
-        return Alert(_('subscribe'), message)
+        return Alert(L('subscribe'), LF('already subscribed', url))
 
     try:
         podcast = session.public_client.get_podcast_data(url)
     except Exception:
-        return Error(_('url error'))
+        return Error(L('url error'))
     return SubscribeTo(podcast)
 
 
-@route(PREFIX + '/toplist/{page}')
+@route(PREFIX + '/toplist/{page}', page=int)
 @public_client_required
 def Toplist(page=0, container=None):
     """
@@ -347,7 +353,7 @@ def Toplist(page=0, container=None):
         try:
             toplist = session.public_client.get_toplist()
         except Exception, e:
-            return Error(_('toplist error'))
+            return Error(L('toplist error'))
         else:
             Data.SaveObject('toplist', toplist)
             Dict['toplist_accessed'] = now
@@ -358,7 +364,7 @@ def Toplist(page=0, container=None):
 
     if not container:
         container = ObjectContainer()
-    container.title2 = _('toplist')
+    container.title2 = L('toplist')
 
     for index, item in enumerate(toplist):
         entry = podcast_to_dict(item)
@@ -371,7 +377,7 @@ def Toplist(page=0, container=None):
     return container
 
 
-@route(PREFIX + '/podcast/{entry_data}', entry_data=dict)
+@route(PREFIX + '/podcast', entry_data=dict)
 @public_client_required
 def Podcast(entry_data, container=None):
     """
@@ -393,7 +399,7 @@ def Podcast(entry_data, container=None):
         key=Callback(Episodes, podcast_data=entry_data),
         thumb=Resource.ContentsOfURLWithFallback(url=entry['logo_url'], fallback=ICON),
         summary=entry['description'],
-        title='%s: %s' % (_('Episodes'), entry['title'])
+        title=LF('episodes', entry['title'])
     ))
 
     # Check to see if podcast is in user's subscriptions and present
@@ -402,22 +408,22 @@ def Podcast(entry_data, container=None):
     if entry['url'] in [i.url for i in podcasts]:
         obj = DirectoryObject(
             key=Callback(UnsubscribeFrom, podcast=entry),
-            title=_('Unsubscribe'),
-            summary=_('unsubscribe from summary'),
+            title=L('Unsubscribe'),
+            summary=L('unsubscribe from summary'),
             thumb=R('icon-remove.png')
         )
     else:
         obj = DirectoryObject(
             key=Callback(SubscribeTo, podcast=entry),
-            title=_('Subscribe'),
-            summary=_('subscribe to summary'),
+            title=L('Subscribe'),
+            summary=L('subscribe to summary'),
             thumb=R('icon-add.png')
         )
     container.add(obj)
     return container
 
 
-@route(PREFIX + '/episodes/{podcast_data}', podcast_data=dict, allow_sync=True)
+@route(PREFIX + '/episodes', podcast_data=dict, allow_sync=True)
 def Episodes(podcast_data, container=None):
     """
     Episodes
@@ -428,11 +434,11 @@ def Episodes(podcast_data, container=None):
     try:
         response = podcastparser.parse(podcast['url'], urlopen(podcast['url']))
     except HTTPError:
-        return Error(_('url error'))
+        return Error(L('url error'))
     episodes = response['episodes']
 
     if not len(episodes):
-        return Alert(_('Episodes'), _('no subscriptions'))
+        return Alert(L('Episodes'), L('no subscriptions'))
 
     if not container:
         container = ObjectContainer()
@@ -444,7 +450,7 @@ def Episodes(podcast_data, container=None):
     return container
 
 
-@route(PREFIX + '/episode/{entry_data}', entry_data=dict)
+@route(PREFIX + '/episode', entry_data=dict)
 def Episode(entry_data, include_container=False):
     """
     Episode
@@ -454,12 +460,12 @@ def Episode(entry_data, include_container=False):
 
     summary = podcastparser.remove_html_tags(entry.get('description'))
     if not summary:
-        summary = entry.get('subtitle', _('No Summary'))
+        summary = entry.get('subtitle', L('No Summary'))
 
     obj = TrackObject(
         key=Callback(Episode, entry_data=entry_data, include_container=True),
         rating_key=entry['guid'],
-        title=entry.get('title', _('No Title')),
+        title=entry.get('title', L('No Title')),
         thumb=Resource.ContentsOfURLWithFallback(url=entry['logo_url'], fallback=ICON),
         summary=summary,
         duration=entry['total_time'] * 1000,
@@ -483,7 +489,7 @@ def Recent(container=None):
 
     if not container:
         container = ObjectContainer()
-    container.title2 = _('Recently Aired')
+    container.title2 = L('Recently Aired')
     return container
 
 
@@ -499,11 +505,11 @@ def Subscriptions(container=None):
 
     podcasts = get_updated_subscriptions()
     if not len(podcasts):
-        return Alert(_('subscriptions'), _('no subscriptions'))
+        return Alert(L('subscriptions'), L('no subscriptions'))
 
     if not container:
         container = ObjectContainer(no_cache=True)
-    container.title2 = _('My Subscriptions')
+    container.title2 = L('subscriptions')
 
     for item in podcasts:
         entry = podcast_to_dict(item)
@@ -516,7 +522,7 @@ def Subscriptions(container=None):
     return container
 
 
-@route(PREFIX + '/recommendations/{page}')
+@route(PREFIX + '/recommendations/{page}', page=int)
 @client_required
 def Recommendations(page=0, container=None):
     """
@@ -526,11 +532,11 @@ def Recommendations(page=0, container=None):
     recommendations = session.client.get_suggestions()
 
     if not len(recommendations):
-        return Alert(_('recommendations'), _('no recommendations'))
+        return Alert(L('recommendations'), L('no recommendations'))
 
     if not container:
         container = ObjectContainer()
-    container.title2 = _('recommendations')
+    container.title2 = L('recommendations')
 
     for index, item in enumerate(recommendations):
         entry = podcast_to_dict(item)
@@ -550,8 +556,8 @@ def SubscribeTo(podcast):
     except Exception, e:
         raise
 
-    message = '%s %s' % (_('subscribed'), podcast['title'])
-    container = Alert(_('subscriptions'), message)
+    force_subscriptions_update = True
+    container = Alert(L('subscriptions'), LF('subscribed', podcast['title']))
     return Episodes(encode(podcast), container)
 
 
@@ -562,6 +568,6 @@ def UnsubscribeFrom(podcast):
     except Exception, e:
         raise
 
-    message = '%s %s' % (_('unsubscribed'), podcast['title'])
-    container = Alert(_('subscriptions'), message)
+    force_subscriptions_update = True
+    container = Alert(L('subscriptions'), LF('unsubscribed', podcast['title']))
     return Podcast(encode(podcast), container)
