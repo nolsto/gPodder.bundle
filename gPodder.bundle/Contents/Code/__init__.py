@@ -10,12 +10,17 @@ from mygpoclient.simple import Podcast
 from session import Session, InvalidClientError
 
 
+cerealizer.register(Podcast)
+
 PREFIX = '/music/gpodder'
 NAME = 'gPodder'
 ICON = 'icon-default.png'
 DEVICE_ID = 'plex-gpodder-plugin.%s' % Network.Hostname
+
 TOPLIST_CACHE_TIME = 86400 # one day
 SUBSCRIPTIONS_CACHE_TIME = 604800 # one week
+SUBSCRIPTIONS_UPDATE_TIME = 60 # one minute
+
 EXCLUDE_REGEX = re.compile(r'[^\w\d]|the\s')
 AUDIO_URL_REGEX = re.compile(r'(https?\:\/\/(?:[^/\s]+)?(?:(?:\/[^\s]*)*\/)?(?:[^\s]*?\.(?P<ext>m4[abpvr]|3gp|mp4|aac|mp3)))')
 
@@ -23,9 +28,6 @@ L = Locale.LocalString
 LF = Locale.LocalStringWithFormat
 
 session = None
-force_subscriptions_update = False
-
-cerealizer.register(Podcast)
 
 
 #==============================================================================
@@ -64,15 +66,58 @@ def client_required(func):
     return wrapper
 
 
+# def baked(temperature=None, duration=None):
+#     def decorator(method):
+#         @functools.wraps(method)
+#         def f(*args, **kwargs):
+#             thing_to_be_baked = method(*args, **kwargs)
+#             return bake(thing_to_be_baked, temperature, duration)
+#         return f
+#     return decorator
+def use_cache(since_attr, cache_time=0):
+    """
+    Wrapper
+    """
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            now = int(time())
+            since = Dict[since_attr] or 0
+            diff = now - since
+            use_cache =  diff < cache_time
+
+            return func(use_cache=use_cache, *args, **kwargs)
+        return wrapper
+    return decorator
+
+# @use_cache('subscriptions_accessed', SUBSCRIPTIONS_CACHE_TIME)
+# def get_subscriptions(use_cache=False):
+
+# since = Dict['toplist_accessed'] or 0
+# now = int(time())
+
+# if not use_cache(since, now) or not Data.Exists('toplist'):
+#     Log('Using requested toplist')
+
+#     try:
+#         toplist = session.public_client.get_toplist()
+#     except Exception:
+#         return Error(L('toplist error'))
+#     else:
+#         Data.SaveObject('toplist', toplist)
+#         Dict['toplist_accessed'] = now
+
+
 #==============================================================================
 # Helper Functions
 #==============================================================================
 
-def use_cache(since, now=None):
-    if not now:
-        now = int(time())
-    diff = now - since
-    return diff < 86400
+# def use_cache(since, now=None):
+#     if not now:
+#         now = int(time())
+#     diff = now - since
+#     return diff < 86400
 
 
 def remove_public_client_cache():
@@ -91,7 +136,8 @@ def remove_client_cache():
     Log('client cache cleared')
 
 
-def get_updated_subscriptions():
+@use_cache('subscriptions_accessed', SUBSCRIPTIONS_UPDATE_TIME)
+def get_subscriptions(use_cache=False):
     since = Dict['subscriptions_accessed'] or 0
     try:
         changes = session.client.pull_subscriptions(DEVICE_ID, since)
@@ -114,6 +160,9 @@ def get_updated_subscriptions():
     Data.SaveObject('subscriptions', podcasts)
     return podcasts
 
+
+def get_toplist(use_cache=False):
+    pass
 
 def create_media_objects(episode):
     enclosures = episode['enclosures']
@@ -322,7 +371,7 @@ def Subscribe(query):
     """
 
     url = query
-    podcasts = get_updated_subscriptions()
+    podcasts = get_subscriptions()
 
     # if the user is already subscribed to the feed, alert and return
     if url in [i.url for i in podcasts]:
@@ -336,8 +385,9 @@ def Subscribe(query):
 
 
 @route(PREFIX + '/toplist/{page}', page=int)
+@use_cache('toplist_accessed', TOPLIST_CACHE_TIME)
 @public_client_required
-def Toplist(page=0, container=None):
+def Toplist(page=0, container=None, use_cache=False):
     """
     Top List
 
@@ -352,7 +402,7 @@ def Toplist(page=0, container=None):
 
         try:
             toplist = session.public_client.get_toplist()
-        except Exception, e:
+        except Exception:
             return Error(L('toplist error'))
         else:
             Data.SaveObject('toplist', toplist)
@@ -388,7 +438,6 @@ def Podcast(entry_data, container=None):
     if not session.client:
         return Episodes(entry_data, container)
 
-
     entry = decode(entry_data)
 
     if not container:
@@ -404,7 +453,7 @@ def Podcast(entry_data, container=None):
 
     # Check to see if podcast is in user's subscriptions and present
     # subscribe/unsubscribe objects accordingly
-    podcasts = get_updated_subscriptions()
+    podcasts = get_subscriptions()
     if entry['url'] in [i.url for i in podcasts]:
         obj = DirectoryObject(
             key=Callback(UnsubscribeFrom, podcast=entry),
@@ -503,7 +552,7 @@ def Subscriptions(container=None):
     Allow user to select a podcast and see its episodes or unsubscribe from it.
     """
 
-    podcasts = get_updated_subscriptions()
+    podcasts = get_subscriptions()
     if not len(podcasts):
         return Alert(L('subscriptions'), L('no subscriptions'))
 
@@ -556,7 +605,7 @@ def SubscribeTo(podcast):
     except Exception, e:
         raise
 
-    force_subscriptions_update = True
+    get_subscriptions(True)
     container = Alert(L('subscriptions'), LF('subscribed', podcast['title']))
     return Episodes(encode(podcast), container)
 
@@ -568,6 +617,6 @@ def UnsubscribeFrom(podcast):
     except Exception, e:
         raise
 
-    force_subscriptions_update = True
+    get_subscriptions(True)
     container = Alert(L('subscriptions'), LF('unsubscribed', podcast['title']))
     return Podcast(encode(podcast), container)
