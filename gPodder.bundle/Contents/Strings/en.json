@@ -26,9 +26,9 @@
   "subscribe prompt": "Please enter the podcast's feed URL",
 
   // error messages
-  "prefs error": "Please set server in Preferences.",
-  "public client error": "Could not connect to webservice. Please check Preferences.",
-  "client error": "Could not authenticate username & password on webservice. Please check Preferences.",
+  "prefs error": "Invalid Preferences.",
+  "public client error": "Could not connect to server. Please check Preferences.",
+  "client error": "Could not authenticate username & password on server. Please check Preferences.",
   "search error": "Search Timed out.",
   "toplist error": "Unable to get toplist.",
   "subscriptions error": "Unable to get subscriptions.",
