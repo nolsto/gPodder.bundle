@@ -1,8 +1,8 @@
 # flake8: noqa
 
-# The entire Plex framework API is stupidly made available in the global
-# context of every module. For static analysis and sanity's sake, this module
-# serves as a place to import pieces as-needed from.
+# The entire Plex framework API is made available in the global context of
+# every module. For static analysis and sanity's sake, this module serves as a
+# place to import pieces from as-needed.
 
 AlbumObject
 ArtistObject
