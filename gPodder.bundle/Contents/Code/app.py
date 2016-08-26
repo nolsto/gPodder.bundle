@@ -92,20 +92,16 @@ def validate_prefs():
         session.device_name = Prefs['device_name']
         session.username = Prefs['username']
         session.password = Prefs['password']
-        # create mygpo clients and clear caches if clients are new
+        # get/create mygpo clients and clear caches if clients are new
         _, created = session.get_or_create_public_client()
         if created:
-            clear_cache(
-                ('subscriptions',),
-                ('subscriptions_accessed',),
-            )
+            clear_cache(data_attrs=('subscriptions',),
+                        dict_items=('subscriptions_accessed',))
             Log.Info("public client cache cleared")
         _, created = session.get_or_create_client()
         if created:
-            clear_cache(
-                ('toplist',),
-                ('toplist_accessed',),
-            )
+            clear_cache(data_attrs=('toplist',),
+                        dict_items=('toplist_accessed',))
             Log.Info("client cache cleared")
     except InvalidPrefsError as e:
         error_message = e.message
