@@ -40,7 +40,13 @@ TOPLIST_CACHE_TIME = 86400 # one day
 SUBSCRIPTIONS_CACHE_TIME = 60 # one minute
 
 EXCLUDE_REGEX = re.compile(r'[^\w\d]|the\s')
-AUDIO_URL_REGEX = re.compile(r'(https?\:\/\/(?:[^/\s]+)?(?:(?:\/[^\s]*)*\/)?(?:[^\s]*?\.(?P<ext>m4[abpvr]|3gp|mp4|aac|mp3)))')
+AUDIO_URL_REGEX = re.compile(r"""
+    (\/\/                                # scheme
+    (?:[^/\s]+)                          # domain name
+    \/(?:[^\s]*\/)?                      # path
+    (?:[^\s\/]*(?<=[^\/])\.              # filename
+    (?P<ext>m4[abpvr]|mp[34]|3gp|aac)))  # extension
+""")
 
 session = Session(DEVICE_ID)
 
