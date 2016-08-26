@@ -3,7 +3,7 @@ from time import time
 
 import app
 from .plex_framework_api import Dict, PrefsObject, route
-from .utils import L
+from .shortcuts import L
 from .exceptions import InvalidPrefsError
 from .containers import AlertContainer
 

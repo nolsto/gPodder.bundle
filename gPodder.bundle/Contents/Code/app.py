@@ -17,7 +17,8 @@ from .plex_framework_api import (
     Resource,
     handler,
 )
-from .utils import L, LF, clear_cache, encode, decode, podcast_to_dict
+from .shortcuts import L, LF
+from .utils import clear_cache, encode, decode, podcast_to_dict
 from .containers import AlertContainer, ErrorContainer, ObjectContainer
 from .exceptions import InvalidPrefsError
 from .decorators import (

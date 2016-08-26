@@ -1,5 +1,5 @@
 from .plex_framework_api import ObjectContainer as PlexObjectContainer
-from .utils import L
+from .shortcuts import L
 
 
 class ObjectContainer(PlexObjectContainer):

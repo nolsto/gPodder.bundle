@@ -1,7 +1,4 @@
-from .plex_framework_api import Data, Dict, JSON, Locale
-
-L = Locale.LocalString
-LF = Locale.LocalStringWithFormat
+from .plex_framework_api import Data, Dict, JSON
 
 def clear_cache(data_attrs=None, dict_items=None):
     if data_attrs is None:
