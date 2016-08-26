@@ -51,46 +51,6 @@ AUDIO_URL_REGEX = re.compile(r"""
 session = Session(DEVICE_ID)
 
 
-@use_cache('subscriptions_accessed', SUBSCRIPTIONS_CACHE_TIME)
-def get_subscriptions(use_cache=False):
-    if use_cache:
-        if Data.Exists('subscriptions'):
-            Log.Info('Using cached subscriptions')
-            return Data.LoadObject('subscriptions')
-        else:
-            return get_subscriptions(use_cache=False)
-
-    Log.Info('Requesting subscriptions')
-    since = Dict['subscriptions_accessed'] or 0
-    try:
-        changes = session.client.pull_subscriptions(since)
-    except:
-        return ErrorContainer(L('subscriptions error'))
-    Dict['subscriptions_accessed'] = changes.since
-
-    Log.Info('Added: %s', changes.add)
-    Log.Info('Removed: %s', changes.remove)
-
-    if Data.Exists('subscriptions'):
-        subscriptions = Data.LoadObject('subscriptions')
-    else:
-        subscriptions = []
-    # remove urls returned from subscriptions changes
-    subscriptions = [s for s in subscriptions
-                     if s.url not in changes.remove]
-    # add urls returned from subscriptions changes
-    subscriptions += [session.public_client.get_podcast_data(url)
-                      for url in changes.add]
-    # sort subscriptions on title
-    subscriptions = sorted(
-        subscriptions,
-        key=lambda x: EXCLUDE_REGEX.sub('', str(x.title).lower()),
-    )
-    Data.SaveObject('subscriptions', subscriptions)
-
-    return subscriptions
-
-
 def validate_prefs():
     try:
         # update session properties
@@ -187,6 +147,46 @@ def main():
     #     title=L('preferences'),
     #     summary=L('preferences summary')
     # ))
+
+
+@use_cache('subscriptions_accessed', SUBSCRIPTIONS_CACHE_TIME)
+def get_subscriptions(use_cache=False):
+    if use_cache:
+        if Data.Exists('subscriptions'):
+            Log.Info('Using cached subscriptions')
+            return Data.LoadObject('subscriptions')
+        else:
+            return get_subscriptions(use_cache=False)
+
+    Log.Info('Requesting subscriptions')
+    since = Dict['subscriptions_accessed'] or 0
+    try:
+        changes = session.client.pull_subscriptions(since)
+    except:
+        return ErrorContainer(L('subscriptions error'))
+    Dict['subscriptions_accessed'] = changes.since
+
+    Log.Info('Added: %s', changes.add)
+    Log.Info('Removed: %s', changes.remove)
+
+    if Data.Exists('subscriptions'):
+        subscriptions = Data.LoadObject('subscriptions')
+    else:
+        subscriptions = []
+    # remove urls returned from subscriptions changes
+    subscriptions = [s for s in subscriptions
+                     if s.url not in changes.remove]
+    # add urls returned from subscriptions changes
+    subscriptions += [session.public_client.get_podcast_data(url)
+                      for url in changes.add]
+    # sort subscriptions on title
+    subscriptions = sorted(
+        subscriptions,
+        key=lambda x: EXCLUDE_REGEX.sub('', str(x.title).lower()),
+    )
+    Data.SaveObject('subscriptions', subscriptions)
+
+    return subscriptions
 
 
 @app_route('/recent')
