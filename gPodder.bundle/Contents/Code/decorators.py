@@ -8,10 +8,6 @@ from .exceptions import InvalidPrefsError
 from .containers import AlertContainer
 
 
-wrapper_assignments = functools.WRAPPER_ASSIGNMENTS + (
-    'func_code', 'func_defaults', 'func_globals', 'func_name',
-)
-
 def app_route(path, method='GET', **kwargs):
     """
     Routes a function as a subpath of the app
@@ -44,10 +40,13 @@ class client_required(object):
     """
     error_message = L('client error')
     client_attr = 'client'
+    wrapper_assignments = functools.WRAPPER_ASSIGNMENTS + (
+        'func_code', 'func_defaults', 'func_globals', 'func_name',
+    )
 
     def __init__(self, func):
         self.func = func
-        functools.update_wrapper(self, func, assigned=wrapper_assignments)
+        functools.update_wrapper(self, func, assigned=self.wrapper_assignments)
 
     def __call__(self, *args, **kwargs):
         if not getattr(app.session, self.client_attr):
