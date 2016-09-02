@@ -20,24 +20,26 @@
   "preferences summary": "Your webservice and account settings.",
   "subscribe to summary": "Add this podcast to your subscriptions both here and in your account.",
   "unsubscribe from summary": "Remove this podcast from your subscriptions both here and in your account.",
+  "published": "Released %s.",
 
   // input prompts
   "search prompt": "Search Feeds",
   "subscribe prompt": "Please enter the podcast's feed URL",
 
   // error messages
+  "client error": "Could not authenticate username & password on server. Please check Preferences.",
   "prefs error": "Invalid Preferences.",
   "public client error": "Could not connect to server. Please check Preferences.",
-  "client error": "Could not authenticate username & password on server. Please check Preferences.",
   "search error": "Search Timed out.",
-  "toplist error": "Unable to get toplist.",
   "subscriptions error": "Unable to get subscriptions.",
+  "subscriptions update error": "Unable to update subscriptions.",
+  "toplist error": "Unable to get toplist.",
   "url error": "Podcast feed URL %s not found.",
 
   // alert messages
-  "no subscriptions": "You have no subscriptions.",
-  "no recommendations": "You have no recommendations.",
   "no episodes": "No episodes found.",
+  "no recommendations": "You have no recommendations.",
+  "no subscriptions": "You have no subscriptions.",
 
   // formatted alert messages
   "already subscribed": "Already subscribed to %s",

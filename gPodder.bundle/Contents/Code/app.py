@@ -1,34 +1,48 @@
 import cerealizer
 import re
 from time import time
+from urllib2 import HTTPError, urlopen
 
+import podcastparser
 from mygpoclient.simple import Podcast
 
 from .plex_framework_api import (
     Callback,
     Data,
+    Datetime,
     Dict,
     DirectoryObject,
+    InputDirectoryObject,
     Log,
+    MediaObject,
     Network,
+    PartObject,
     Prefs,
     PrefsObject,
     R,
     Resource,
+    TrackObject,
+    TVShowObject,
     handler,
 )
 from .shortcuts import L, LF
-from .utils import clear_cache, encode, decode, podcast_to_dict
+from .utils import (clear_cache, get_audio_codec_from_mime_type,
+                    get_container_from_audio_codec, get_mime_type_from_ext,
+                    podcast_to_dict)
 from .containers import AlertContainer, ErrorContainer, ObjectContainer
 from .exceptions import InvalidPrefsError
 from .decorators import (
     app_route, client_required, public_client_required, use_cache,
 )
 
-from session import Session, InvalidClientError, InvalidPublicClientError
+from session import (Client, PublicClient, Session, InvalidClientError,
+                     InvalidPublicClientError)
 
 
 cerealizer.register(Podcast)
+cerealizer.register(Client)
+cerealizer.register(PublicClient)
+cerealizer.register(Session)
 
 
 PREFIX = '/music/gpodder'
@@ -37,8 +51,9 @@ ICON = 'icon-default.png'
 DEVICE_ID = 'plex-gpodder-plugin.%s' % Network.Hostname
 
 TOPLIST_CACHE_TIME = 86400 # one day
-SUBSCRIPTIONS_CACHE_TIME = 60 # one minute
+SUBSCRIPTIONS_CACHE_TIME = 3600 # one hour
 
+# TODO: See if undocumented Plex Regex() can work
 EXCLUDE_REGEX = re.compile(r'[^\w\d]|the\s')
 AUDIO_URL_REGEX = re.compile(r"""
     (\/\/                                # scheme
@@ -48,7 +63,11 @@ AUDIO_URL_REGEX = re.compile(r"""
     (?P<ext>m4[abpvr]|mp[34]|3gp|aac)))  # extension
 """)
 
-session = Session(DEVICE_ID)
+if Data.Exists('session'):
+    Log.Info('Using saved session')
+    session = Data.LoadObject('session')
+else:
+    session = Session(DEVICE_ID)
 
 
 def validate_prefs():
@@ -69,6 +88,7 @@ def validate_prefs():
             clear_cache(data_attrs=('toplist',),
                         dict_items=('toplist_accessed',))
             Log.Info("client cache cleared")
+        Data.SaveObject('session', session)
     except InvalidPrefsError as e:
         error_message = e.message
     except InvalidPublicClientError as e:
@@ -111,42 +131,29 @@ def main():
             summary=L('toplist summary'),
             thumb=R('icon-popular.png'),
         ),
+        InputDirectoryObject(
+            key=Callback(subscribe),
+            title=L('subscribe'),
+            prompt=L('subscribe prompt'),
+            summary=L('subscribe summary'),
+            thumb=R('icon-add.png'),
+        ),
+        InputDirectoryObject(
+            key=Callback(search),
+            title=L('search'),
+            prompt=L('search prompt'),
+            summary=L('search summary'),
+            thumb=R('icon-search.png'),
+        ),
+        PrefsObject(
+            title=L('preferences'),
+            summary=L('preferences summary'),
+        ),
     ))
-    # return container.add(DirectoryObject(
-    #     key=Callback(recent),
-    #     title=L('recent'),
-    #     summary=L('recent summary'),
-    #     thumb=R('icon-recent.png')
-    # )).add(DirectoryObject(
-    #     key=Callback(Subscriptions),
-    #     title=L('subscriptions'),
-    #     summary=L('subscriptions summary'),
-    #     thumb=R('icon-subscriptions.png')
     # )).add(DirectoryObject(
     #     key=Callback(Recommendations),
     #     title=L('recommendations'),
     #     summary=L('recommendations summary')
-    # )).add(DirectoryObject(
-    #     key=Callback(Toplist),
-    #     title=L('toplist'),
-    #     summary=L('toplist summary'),
-    #     thumb=R('icon-popular.png')
-    # )).add(InputDirectoryObject(
-    #     key=Callback(Search),
-    #     title=L('search'),
-    #     prompt=L('search prompt'),
-    #     summary=L('search summary'),
-    #     thumb=R('icon-search.png')
-    # )).add(InputDirectoryObject(
-    #     key=Callback(Subscribe),
-    #     title=L('subscribe'),
-    #     prompt=L('subscribe prompt'),
-    #     summary=L('subscribe summary'),
-    #     thumb=R('icon-add.png')
-    # )).add(PrefsObject(
-    #     title=L('preferences'),
-    #     summary=L('preferences summary')
-    # ))
 
 
 @use_cache('subscriptions_accessed', SUBSCRIPTIONS_CACHE_TIME)
@@ -173,19 +180,45 @@ def get_subscriptions(use_cache=False):
         subscriptions = Data.LoadObject('subscriptions')
     else:
         subscriptions = []
-    # remove urls returned from subscriptions changes
+    # Remove urls returned from subscriptions changes.
     subscriptions = [s for s in subscriptions
                      if s.url not in changes.remove]
-    # add urls returned from subscriptions changes
+    # Add urls returned from subscriptions changes.
     subscriptions += [session.public_client.get_podcast_data(url)
                       for url in changes.add]
-    # sort subscriptions on title
-    subscriptions = sorted(
-        subscriptions,
-        key=lambda x: EXCLUDE_REGEX.sub('', str(x.title).lower()),
-    )
-    Data.SaveObject('subscriptions', subscriptions)
 
+    Data.SaveObject('subscriptions', subscriptions)
+    return subscriptions
+
+
+def update_subscriptions(add_entries=None, remove_entries=None):
+    if add_entries is None:
+        add_entries = ()
+    if remove_entries is None:
+        remove_entries = ()
+
+    result = session.client.update_subscriptions(
+        add_urls=[entry['url'] for entry in add_entries],
+        remove_urls=[entry['url'] for entry in remove_entries],
+    )
+    subscriptions = get_subscriptions(use_cache=True)
+
+    # Add new entries to subscriptions
+    for entry in add_entries:
+        for s in subscriptions:
+            if s.url == entry['url']:
+                break
+        else:
+            subscriptions.append(Podcast.from_dict(entry))
+
+    # Update subscriptions who's urls have changed.
+    for old_url, new_url in result.update_urls:
+        for s in subscriptions:
+            if s.url == old_url:
+                s.url = new_url
+                break
+
+    Data.SaveObject('subscriptions', subscriptions)
     return subscriptions
 
 
@@ -201,58 +234,58 @@ def recent(container=None):
     return container
 
 
-@app_route('/subcribe_to')
+@app_route('/subcribe_to', entry=dict)
 @client_required
-def subscribe_to(podcast_data):
-    podcast = decode(podcast_data)
+def subscribe_to(entry):
     try:
-        session.client.update_subscriptions(add_urls=[podcast['url']])
+        update_subscriptions(add_entries=(entry,))
     except:
-        raise
-
-    get_subscriptions(use_cache=True)
+        return podcast(
+            entry=entry,
+            container=AlertContainer(L('subscriptions'),
+                                     L('subscriptions update error')),
+        )
     return episodes(
-        podcast_data,
+        entry=entry,
         container=AlertContainer(L('subscriptions'),
-                                 LF('subscribed', podcast['title'])),
+                                 LF('subscribed', entry['title'])),
     )
 
 
-@app_route('/unsubscribe_from')
+@app_route('/unsubscribe_from', entry=dict)
 @client_required
-def unsubscribe_from(podcast_data):
-    podcast = decode(podcast_data)
+def unsubscribe_from(entry):
     try:
-        session.client.update_subscriptions(remove_urls=[podcast['url']])
+        update_subscriptions(remove_entries=(entry,))
     except:
-        raise
-
-    get_subscriptions(use_cache=True)
+        return podcast(
+            entry=entry,
+            container=AlertContainer(L('subscriptions'),
+                                     L('subscriptions update error')),
+        )
     return podcast(
-        podcast_data,
+        entry=entry,
         container=AlertContainer(L('subscriptions'),
-                                 LF('unsubscribed', podcast['title'])),
+                                 LF('unsubscribed', entry['title'])),
     )
 
 
-# @app_route('/podcast', entry_data=dict)
-@app_route('/podcast')
-@public_client_required
-def podcast(entry_data, container=None):
+@app_route('/podcast', entry=dict)
+def podcast(entry, container=None):
     """
     """
     if not session.client:
         # if the user is not logged in, just show the episodes
-        return episodes(entry_data, container)
-
-    entry = decode(entry_data)
+        return episodes(entry, container)
 
     if not container:
         container = ObjectContainer()
+    else:
+        container.replace_parent = True
     container.title2 = entry['title']
     container.no_cache = True
     container.add(DirectoryObject(
-        key=Callback(episodes, podcast_data=entry_data),
+        key=Callback(episodes, entry=entry),
         thumb=Resource.ContentsOfURLWithFallback(url=entry['logo_url'],
                                                  fallback=ICON),
         summary=entry['description'],
@@ -261,17 +294,17 @@ def podcast(entry_data, container=None):
 
     # Check to see if podcast is in user's subscriptions and present
     # subscribe/unsubscribe objects accordingly
-    podcasts = get_subscriptions()
-    if entry['url'] in [i.url for i in podcasts]:
+    subscriptions = get_subscriptions()
+    if entry['url'] in [s.url for s in subscriptions]:
         obj = DirectoryObject(
-            key=Callback(unsubscribe_from, podcast_data=encode(entry)),
+            key=Callback(unsubscribe_from, entry=entry),
             title=L('Unsubscribe'),
             summary=L('unsubscribe from summary'),
             thumb=R('icon-remove.png'),
         )
     else:
         obj = DirectoryObject(
-            key=Callback(subscribe_to, podcast_data=encode(entry)),
+            key=Callback(subscribe_to, entry=entry),
             title=L('Subscribe'),
             summary=L('subscribe to summary'),
             thumb=R('icon-add.png'),
@@ -280,31 +313,93 @@ def podcast(entry_data, container=None):
     return container
 
 
-# @app_route('/episodes', podcast_data=dict, allow_sync=True)
-@app_route('/episodes', allow_sync=True)
-def episodes(podcast_data, container=None):
+@app_route('/episodes', entry=dict, allow_sync=True)
+def episodes(entry, container=None):
     """
     """
-    Log.Debug("%s", podcast_data)
-    # podcast = decode(podcast_data)
+    try:
+        # TODO: Use Plex's HTTP API
+        response = podcastparser.parse(entry['url'], urlopen(entry['url']))
+    except HTTPError:
+        return ErrorContainer(L('url error'))
 
-    # try: response = podcastparser.parse(podcast['url'], urlopen(podcast['url']))
-    # except HTTPError:
-    #     return Error(L('url error'))
-    # episodes = response['episodes']
+    if not len(response['episodes']):
+        return AlertContainer(L('Episodes'), L('no episodes'))
 
-    # if not len(episodes):
-    #     return Alert(L('Episodes'), L('no subscriptions'))
+    if not container:
+        container = ObjectContainer()
+    else:
+        container.replace_parent = True
+    container.title2 = entry['title']
 
-    # if not container:
-    #     container = ObjectContainer()
-    # container.title2 = podcast['title']
+    for e in response['episodes']:
+        summary = podcastparser.remove_html_tags(e.get('description',
+                                                       e.get('subtitle')))
+        published_date = Datetime.FromTimestamp(e['published']).strftime("%x")
+        published = LF('published', published_date)
 
-    # for entry in episodes:
-    #     entry['logo_url'] = podcast['logo_url']
-    #     container.add(Episode(encode(entry)))
-    # return container
-    return ObjectContainer(title2="Episodes")
+        data = {k: e[k] for k in {'enclosures', 'guid'}}
+        data.update(
+            logo_url=entry['logo_url'],
+            summary="%s %s" % (published, summary),
+            title=e.get('title', L('no title')),
+            total_time=e['total_time'] * 1000,
+        )
+        container.add(episode(entry=data))
+
+    return container
+
+
+def create_media_objects(entry):
+    Log.Debug("%s", entry)
+    enclosures = entry['enclosures']
+
+    # look for audio files in entry description if no enclosures are found
+    summary = entry.get('summary')
+    if not len(enclosures) and summary:
+        matches = AUDIO_URL_REGEX.findall(summary)
+        enclosures = [{'url': m[0], 'mime_type': get_mime_type_from_ext(m[1])}
+                      for m in matches]
+
+    # Throw away duplicate enclosures.
+    enclosures = [dict(t) for t in set([tuple(e.items()) for e in enclosures])]
+    Log.Debug("%s", enclosures)
+
+    objects = []
+    for e in enclosures:
+        audio_codec = get_audio_codec_from_mime_type(e['mime_type'])
+        container = get_container_from_audio_codec(audio_codec)
+        objects.append(
+            MediaObject(
+                audio_channels=2,
+                audio_codec=audio_codec,
+                container=container,
+                parts=[PartObject(key=e['url'])],
+            )
+        )
+    return objects
+
+
+@app_route('/episode', entry=dict)
+def episode(entry, include_container=False):
+    """
+    """
+    obj = TrackObject(
+        key=Callback(episode, entry=entry, include_container=True),
+        rating_key=entry['guid'],
+        title=entry.get('title', L('No Title')),
+        summary=entry['summary'],
+        duration=entry['total_time'],
+        source_title=NAME,
+        thumb=Resource.ContentsOfURLWithFallback(url=entry['logo_url'],
+                                                 fallback=ICON),
+        items=create_media_objects(entry),
+    )
+
+    if include_container:
+        return ObjectContainer(objects=[obj])
+    else:
+        return obj
 
 
 @app_route('/subscriptions')
@@ -314,22 +409,27 @@ def subscriptions(container=None):
     List all podcasts user is currently subscribed to.
     Allow user to select a podcast and see its episodes or unsubscribe from it.
     """
-    podcasts = get_subscriptions()
-    if not len(podcasts):
+    subscriptions = get_subscriptions()
+    if not len(subscriptions):
         return AlertContainer(L('subscriptions'), L('no subscriptions'))
 
     if not container:
         container = ObjectContainer(no_cache=True)
     container.title2 = L('subscriptions')
 
-    for item in podcasts:
+    for s in subscriptions:
         container.add(DirectoryObject(
-            key=Callback(podcast, entry_data=encode(podcast_to_dict(item))),
-            title=item.title,
-            summary=item.description,
-            thumb=Resource.ContentsOfURLWithFallback(url=item.logo_url,
+            key=Callback(podcast, entry=podcast_to_dict(s)),
+            title=s.title,
+            summary=s.description,
+            thumb=Resource.ContentsOfURLWithFallback(url=s.logo_url,
                                                      fallback=ICON),
         ))
+
+    # Sort subscriptions on title.
+    container.objects.sort(
+        key=lambda x: EXCLUDE_REGEX.sub('', str(x.title).lower()),
+    )
     return container
 
 
@@ -358,7 +458,45 @@ def toplist(page=0, container=None, use_cache=False):
 
     for item in toplist:
         container.add(DirectoryObject(
-            key=Callback(podcast, entry_data=encode(podcast_to_dict(item))),
+            key=Callback(podcast, entry=podcast_to_dict(item)),
+            title=item.title,
+            summary=item.description,
+            thumb=Resource.ContentsOfURLWithFallback(url=item.logo_url,
+                                                     fallback=ICON),
+        ))
+    return container
+
+
+@app_route('/subscribe/{query}')
+@client_required
+def subscribe(query):
+    """
+    """
+    # if the user is already subscribed to the feed, alert and return
+    if query in [i.url for i in get_subscriptions()]:
+        return AlertContainer(L('subscribe'), LF('already subscribed', query))
+    try:
+        item = session.public_client.get_podcast_data(query)
+    except:
+        return ErrorContainer(L('url error'))
+    return subscribe_to(entry=podcast_to_dict(item))
+
+
+@app_route('/search/{query}')
+@public_client_required
+def search(query):
+    """
+    """
+    try:
+        search_results = session.public_client.search_podcasts(query)
+    except:
+        return ErrorContainer(L('search error'))
+
+    container = ObjectContainer(title2=L('search results'))
+    for item in search_results:
+        container.add(TVShowObject(
+            key=Callback(podcast, entry=podcast_to_dict(item)),
+            rating_key=item.url,
             title=item.title,
             summary=item.description,
             thumb=Resource.ContentsOfURLWithFallback(url=item.logo_url,

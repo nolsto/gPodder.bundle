@@ -7,6 +7,7 @@
 AlbumObject
 ArtistObject
 AudioCodec
+AudioStreamObject
 Callback
 Client
 ClientPlatform
