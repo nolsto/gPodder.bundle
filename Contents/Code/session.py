@@ -61,8 +61,8 @@ class PublicClient(ClientMixin, MygpoPublicClient):
 
 class Session(object):
     def __init__(self, device_id):
-        self._client_is_dirty = True
-        self._public_client_is_dirty = True
+        self.client_is_dirty = True
+        self.public_client_is_dirty = True
         self.device_id = device_id
 
     def __setattr__(self, name, value):
@@ -74,40 +74,42 @@ class Session(object):
         except AttributeError:
             super(Session, self).__setattr__(name, value)
         if name is 'server':
-            self._client_is_dirty = True
+            self.client_is_dirty = True
         if name in ('username', 'password', 'server'):
-            self._public_client_is_dirty = True
+            self.public_client_is_dirty = True
         if name is 'device_name':
             self.update_device()
 
     def create_public_client(self):
         client = PublicClient(self.server)
-        self._public_client = client
-        self._public_client_is_dirty = False
-        return self._public_client
+        # Plex Framework does not allow varible names preceded by an underscore
+        self.public_client_ = client
+        self.public_client_is_dirty = False
+        return self.public_client_
 
     def create_client(self):
         client = Client(self.device_id, self.username, self.password,
                         self.server)
-        self._client = client
-        self._client_is_dirty = False
-        return self._client
+        # Plex Framework does not allow varible names preceded by an underscore
+        self.client_ = client
+        self.client_is_dirty = False
+        return self.client_
 
     def get_or_create_public_client(self):
-        client = getattr(self, '_public_client', None)
+        client = getattr(self, 'public_client_', None)
         created = False
-        if self._public_client_is_dirty:
+        if self.public_client_is_dirty:
             client = self.create_public_client()
             created = True
         return (client, created)
 
     def get_or_create_client(self):
-        client = getattr(self, '_client', None)
+        client = getattr(self, 'client_', None)
         created = False
-        if self._client_is_dirty:
+        if self.client_is_dirty:
             client = self.create_client()
             created = True
-            if getattr(self, '_update_device', False):
+            if getattr(self, 'device_updated', False):
                 # Update device if the `device_name` was changed since a client
                 # was created.
                 self.update_device()
@@ -123,7 +125,7 @@ class Session(object):
 
     def update_device(self):
         try:
-            updated = self._client.update_device_settings(
+            updated = self.client_.update_device_settings(
                 self.device_id,
                 type='server',
                 caption=self.device_name
@@ -131,6 +133,6 @@ class Session(object):
         except:
             updated = False
         if updated:
-            self._update_device = False
+            self.device_updated = False
         else:
-            self._update_device = True
+            self.device_updated = True
